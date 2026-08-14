@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NeuralLab — slice 1</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --bg: #0e0d15;
+        --panel: #16151f;
+        --panel2: #1f1e2a;
+        --line: #2c2a3a;
+        --text: #e4e2ec;
+        --dim: #8c8899;
+        --faint: #5c5871;
+        --amber: #e9a13b;
+        --cyan: #4ea8c4;
+        --violet: #8b7bd8;
+        --ok: #4fb48c;
+        --bad: #d9625c;
+        --mono: "Cascadia Mono", "SF Mono", Consolas, monospace;
+        --display: Bahnschrift, "DIN Alternate", "Roboto Condensed", "Segoe UI", system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      /*
+        `hidden` means hidden. The browser's own rule for it is the weakest kind of selector, so
+        any `#thing { display: … }` in this file silently beats it. Evolab found that out twice
+        the hard way; this project starts with the rule in place.
+      */
+      [hidden] { display: none !important; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg); color: var(--text); font-family: var(--display);
+        display: flex; flex-direction: column; overflow: hidden;
+      }
+
+      header {
+        display: flex; align-items: center; gap: 10px;
+        padding: 0 12px; height: 42px; flex: none;
+        background: var(--panel); border-bottom: 1px solid var(--line);
+        position: relative; flex-wrap: nowrap; overflow: hidden;
+      }
+      header > * { flex: none; }
+      .brand { font-weight: 600; letter-spacing: .1em; text-transform: uppercase; font-size: 12px; }
+      .brand em { font-style: normal; color: var(--amber); }
+      .spacer { flex: 1; }
+      .hint { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
+      @media (max-width: 1180px) { .hint { display: none; } }
+
+      button {
+        font-family: var(--display); font-size: 12px; letter-spacing: .02em;
+        padding: 4px 11px; border-radius: 3px; border: 1px solid var(--line);
+        background: var(--panel2); color: var(--text); cursor: pointer; white-space: nowrap;
+      }
+      button:hover:not(:disabled) { border-color: var(--faint); }
+      button.pri { background: var(--amber); border-color: var(--amber); color: #17140c; font-weight: 600; }
+      button:disabled { opacity: .4; cursor: default; }
+      :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+      .seg { display: flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+      .seg button { border: 0; border-radius: 0; background: transparent; color: var(--dim); }
+      .seg button.on { background: var(--panel2); color: var(--amber); }
+      /*
+        Each network owns a hue — §7. The switch is the one place both are on screen at once,
+        so it is the one place the association has to be established.
+      */
+      .seg.nets button#net-mlp.on { color: var(--violet); }
+      .seg.nets button#net-som.on { color: var(--cyan); }
+
+      main {
+        flex: 1; display: grid; grid-template-columns: 244px minmax(0, 1fr) 320px;
+        min-height: 0; position: relative;
+      }
+      aside { background: var(--panel); overflow-y: auto; display: flex; flex-direction: column; }
+      aside.left { border-right: 1px solid var(--line); }
+      aside.right { border-left: 1px solid var(--line); }
+      .narrow-only { display: none; }
+      .scrim { display: none; }
+
+      /*
+        §9 — degrade the chassis, keep the instrument.
+
+        The two fixed columns are 564 px between them, so at 700 px the stage would be getting
+        136 px. Below 1000 px the side panels stop taking grid space and become overlay drawers
+        the stage runs underneath. Same DOM, same ids, same contents.
+      */
+      @media (max-width: 999px) {
+        .narrow-only { display: inline-block; }
+        main { grid-template-columns: minmax(0, 1fr); }
+        aside {
+          position: absolute; top: 0; bottom: 0; z-index: 30;
+          width: min(300px, 86vw);
+          transition: transform .16s ease-out;
+          box-shadow: 0 0 30px rgba(0, 0, 0, .55);
+        }
+        aside.left { left: 0; transform: translateX(-101%); }
+        aside.right { right: 0; transform: translateX(101%); }
+        aside.open { transform: none; }
+        .scrim { display: block; position: absolute; inset: 0; z-index: 20; background: rgba(8, 7, 13, .55); }
+        .scrim[hidden] { display: none; }
+      }
+      @media (max-width: 599px) {
+        aside { width: 86vw; }
+        header { gap: 7px; padding: 0 8px; }
+      }
+
+      /* Panel header. A fixed 28 px bar, so nothing in it may wrap. */
+      .ph {
+        display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 28px; flex: none;
+        border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 10px;
+        letter-spacing: .14em; text-transform: uppercase; color: var(--dim); white-space: nowrap;
+      }
+      .ph em {
+        font-style: normal; color: var(--faint); letter-spacing: 0; text-transform: none;
+        font-size: 11px; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+      }
+      .ph .sp { flex: 1; }
+
+      /* Panel body. flex:none — a shrinkable body draws over the next panel's header. */
+      .pb { padding: 9px 10px; display: flex; flex-direction: column; gap: 8px; flex: none; }
+
+      /* controls */
+      .sl { display: grid; grid-template-columns: 62px 1fr 52px; align-items: center; gap: 7px; }
+      .sl-name { font-size: 12px; color: var(--dim); }
+      .sl-val {
+        font-family: var(--mono); font-size: 11px; font-weight: 400; text-align: right;
+        color: var(--text); font-variant-numeric: tabular-nums;
+      }
+      .sl-head {
+        font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+        color: var(--dim); padding-bottom: 3px; border-bottom: 1px solid var(--line); margin-top: 2px;
+      }
+      input[type="range"] {
+        -webkit-appearance: none; appearance: none;
+        width: 100%; height: 3px; border-radius: 2px; background: var(--line); outline: none;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none; appearance: none; width: 11px; height: 11px;
+        border-radius: 50%; background: var(--text); cursor: pointer; border: none;
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 11px; height: 11px; border-radius: 50%; background: var(--text); cursor: pointer; border: none;
+      }
+      select, input[type="text"] {
+        font-family: var(--display); font-size: 12px; padding: 3px 6px; border-radius: 3px;
+        border: 1px solid var(--line); background: var(--panel2); color: var(--text); width: 100%;
+      }
+      input[type="text"] { font-family: var(--mono); font-size: 11.5px; }
+      input[type="text"].bad { border-color: var(--bad); color: var(--bad); }
+      .seg.wide { width: 100%; }
+      .seg.wide button { flex: 1; padding: 3px 0; }
+
+      /* A horizontal bar for one output probability. */
+      .prob { display: grid; grid-template-columns: 58px 1fr 46px; align-items: center; gap: 7px; }
+      .prob span { font-size: 11.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+      .prob i { display: block; height: 6px; border-radius: 3px; background: var(--line); }
+      .prob i b { display: block; height: 100%; border-radius: 3px; }
+      .prob u {
+        text-decoration: none; font-family: var(--mono); font-size: 11px; text-align: right;
+        color: var(--text); font-variant-numeric: tabular-nums;
+      }
+      /* One row of activations, drawn as a strip of cells. */
+      .strip { display: flex; flex-direction: column; gap: 3px; }
+      .strip-head {
+        display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9.5px;
+        letter-spacing: .08em; text-transform: uppercase; color: var(--faint);
+      }
+      .strip-cells { display: flex; gap: 2px; height: 15px; }
+      .strip-cells i { flex: 1; border-radius: 1px; display: block; min-width: 2px; }
+
+      /* readouts */
+      .kv {
+        display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono);
+        font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums;
+      }
+      .kv b { color: var(--text); font-weight: 400; }
+      .kv b.am { color: var(--amber); } .kv b.cy { color: var(--cyan); } .kv b.ok { color: var(--ok); }
+      .divide { height: 1px; background: var(--line); margin: 3px 0; }
+      /* flex: none — a shrinkable canvas renders shorter than its declared height. */
+      #chart { display: block; flex: none; width: 100%; height: 150px; }
+      .gauge { height: 4px; border-radius: 3px; background: var(--line); overflow: hidden; flex: none; }
+      .gauge i { display: block; height: 100%; background: var(--amber); border-radius: 3px; }
+      .badge.training { color: var(--amber); border-color: #4a3b1f; }
+      .badge.done { color: var(--ok); border-color: #2b4c40; }
+      .legend {
+        display: flex; gap: 12px; padding: 6px 10px; font-family: var(--mono); font-size: 10px;
+        color: var(--faint); border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap;
+      }
+      .legend s { text-decoration: none; }
+      .note { font-size: 11.5px; color: var(--faint); line-height: 1.45; padding: 2px 10px 10px; }
+      .note em { font-style: normal; color: var(--dim); }
+
+      /* stage */
+      .stage-wrap { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+      .stage-box {
+        position: relative; flex: 1; min-height: 0;
+        background: radial-gradient(120% 90% at 50% 8%, #191826 0%, #0b0a11 78%);
+      }
+      /*
+        The graph gets more room than the scatter. Sixteen units at a 30 px pitch need 450 px to
+        avoid overlapping, while the scatter reads fine at 240 — and the graph is what this slice
+        is about.
+      */
+      .stage-box.graph { flex: 1.35; border-bottom: 1px solid var(--line); }
+      #stage, #graph { display: block; width: 100%; height: 100%; }
+      #graph { cursor: crosshair; }
+      #stage { cursor: crosshair; }
+      #hud {
+        position: absolute; top: 12px; left: 12px;
+        display: flex; flex-direction: column; gap: 4px;
+        background: rgba(14, 13, 21, .84); border: 1px solid var(--line);
+        border-radius: 3px; padding: 8px 11px; pointer-events: none;
+      }
+      #hud div { display: flex; gap: 12px; font-family: var(--mono); font-size: 11px; }
+      #hud span { color: var(--faint); width: 64px; }
+      #hud b { font-weight: 400; color: var(--text); font-variant-numeric: tabular-nums; }
+      .badge {
+        position: absolute; top: 12px; right: 12px;
+        font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+        padding: 3px 8px; border-radius: 2px; border: 1px solid var(--line);
+        background: rgba(14, 13, 21, .84); color: var(--dim);
+      }
+    </style>
+  </head>
+  <body data-stage="explorer" data-net="mlp">
+    <header>
+      <span class="brand">Neural<em>lab</em></span>
+      <span class="seg nets" id="nets">
+        <button id="net-mlp" class="on" title="Multilayer perceptron">Perceptron</button>
+        <button id="net-som" title="Kohonen map — arrives in slice 9" disabled>Kohonen</button>
+      </span>
+      <span class="seg" id="stages">
+        <button id="stage-guided">Guided</button>
+        <button id="stage-explorer" class="on">Explorer</button>
+        <button id="stage-lab">Lab</button>
+      </span>
+      <button id="btn-train" class="pri" title="Start or pause training (Space)">Train</button>
+      <button id="btn-step" title="One minibatch step (.)">Step</button>
+      <button id="btn-reset" title="Back to step zero, same weights">Reset</button>
+      <button id="btn-resample" title="New sample from a new seed (R)">Resample</button>
+      <button id="btn-panel-left" class="narrow-only">Controls</button>
+      <button id="btn-panel-right" class="narrow-only">Instruments</button>
+      <span class="spacer"></span>
+      <span class="hint" id="hint"></span>
+    </header>
+
+    <main>
+      <div class="scrim" id="scrim" hidden></div>
+
+      <aside class="left" id="panel-left">
+        <div class="ph">Data<span class="sp"></span><em id="ph-data">two moons</em></div>
+        <div class="pb">
+          <label class="sl-head" for="i-dataset">set</label>
+          <select id="i-dataset"></select>
+          <div class="sl">
+            <span class="sl-name">samples</span>
+            <input type="range" id="i-n" min="20" max="1000" step="20" value="240" />
+            <b class="sl-val" id="v-n">240</b>
+          </div>
+          <div class="sl">
+            <span class="sl-name">noise</span>
+            <input type="range" id="i-noise" min="0" max="0.6" step="0.01" value="0.15" />
+            <b class="sl-val" id="v-noise">0.15</b>
+          </div>
+          <div class="sl">
+            <span class="sl-name">train / val</span>
+            <input type="range" id="i-split" min="0.5" max="0.9" step="0.05" value="0.7" />
+            <b class="sl-val" id="v-split">70%</b>
+          </div>
+          <div class="sl">
+            <span class="sl-name">seed</span>
+            <input type="range" id="i-seed" min="1" max="9999" step="1" value="4417" />
+            <b class="sl-val" id="v-seed">4417</b>
+          </div>
+        </div>
+
+        <div class="ph">Network<span class="sp"></span><em id="ph-arch">2-8-8-2</em></div>
+        <div class="pb">
+          <label class="sl-head" for="i-arch">hidden layers</label>
+          <input type="text" id="i-arch" value="8-8" spellcheck="false"
+                 title="Widths, dash-separated. Empty means no hidden layer — challenge 1." />
+          <div class="seg" id="presets">
+            <button id="arch-none" title="No hidden layer">none</button>
+            <button id="arch-one">8</button>
+            <button id="arch-two" class="on">8-8</button>
+            <button id="arch-deep">8-8-8</button>
+          </div>
+          <label class="sl-head" for="i-act">hidden activation</label>
+          <select id="i-act"></select>
+          <label class="sl-head" for="i-init">initialisation</label>
+          <select id="i-init"></select>
+          <button id="btn-reinit" style="width:100%">Reinitialise weights</button>
+          <div class="kv"><span>parameters</span><b class="am" id="s-params">—</b></div>
+          <div class="kv"><span>connections</span><b id="s-edges">—</b></div>
+        </div>
+
+        <div class="ph">Training<span class="sp"></span><em id="ph-opt">SGD</em></div>
+        <div class="pb">
+          <div class="sl">
+            <span class="sl-name">learning rate</span>
+            <input type="range" id="i-lr" min="-4" max="2.7" step="0.05" value="-1" />
+            <b class="sl-val" id="v-lr">0.100</b>
+          </div>
+          <div class="sl">
+            <span class="sl-name">batch size</span>
+            <input type="range" id="i-batch" min="1" max="64" step="1" value="16" />
+            <b class="sl-val" id="v-batch">16</b>
+          </div>
+          <div class="sl">
+            <span class="sl-name">steps</span>
+            <input type="range" id="i-steps" min="100" max="4000" step="100" value="400" />
+            <b class="sl-val" id="v-steps">400</b>
+          </div>
+          <div class="note" id="lr-note" style="padding:0"></div>
+        </div>
+      </aside>
+
+      <div class="stage-wrap">
+        <div class="stage-box graph">
+          <canvas id="graph"></canvas>
+          <div class="badge" id="graph-badge">random weights</div>
+        </div>
+        <div class="stage-box">
+          <canvas id="stage"></canvas>
+          <div id="hud">
+            <div><span>probe</span><b id="v-cursor">—</b></div>
+            <div><span>predicts</span><b id="v-predict">—</b></div>
+            <div><span>confidence</span><b id="v-conf">—</b></div>
+            <div><span>samples</span><b id="v-samples">—</b></div>
+          </div>
+          <div class="badge" id="stage-badge">drag to move the probe</div>
+        </div>
+      </div>
+
+      <aside class="right" id="panel-right">
+        <div class="ph">Loss<span class="sp"></span><em id="ph-chart">step 0</em></div>
+        <canvas id="chart"></canvas>
+        <div class="legend">
+          <s style="color:var(--amber)">▬ train</s>
+          <s style="color:var(--amber);opacity:.55">▨ batch spread</s>
+          <s style="color:var(--cyan)">▬ validation</s>
+        </div>
+        <div class="pb">
+          <div class="kv"><span>step</span><b class="am" id="s-step">0 / 400</b></div>
+          <span class="gauge"><i id="s-progress" style="width:0%"></i></span>
+          <div class="kv"><span>epoch</span><b id="s-epoch">0</b></div>
+          <div class="kv"><span>train loss</span><b class="am" id="s-trainloss">—</b></div>
+          <div class="kv"><span>validation loss</span><b class="cy" id="s-valloss">—</b></div>
+          <div class="kv"><span>train accuracy</span><b id="s-trainacc">—</b></div>
+          <div class="kv"><span>validation accuracy</span><b id="s-valacc">—</b></div>
+          <div class="divide"></div>
+          <div class="kv"><span>steps / s</span><b id="s-sps">—</b></div>
+        </div>
+        <div class="note" id="run-note"></div>
+
+        <div class="ph">Output<span class="sp"></span><em id="ph-out">softmax</em></div>
+        <div class="pb" id="outputs"></div>
+        <div class="note" id="out-note">
+          The weights are <em>random</em> and nothing has been trained, so whichever class wins
+          here means nothing — a confident answer is as arbitrary as an even one. Press
+          <em>Reinitialise</em> and watch the same probe change its mind.
+        </div>
+
+        <div class="ph">Activations<span class="sp"></span><em>at the probe</em></div>
+        <div class="pb" id="acts"></div>
+
+        <div class="ph">Dataset<span class="sp"></span><em id="ph-seed">seed 4417</em></div>
+        <div class="legend" id="legend"></div>
+        <div class="pb">
+          <div class="kv"><span>total</span><b id="s-total">—</b></div>
+          <div class="kv"><span>train</span><b class="am" id="s-train">—</b></div>
+          <div class="kv"><span>validation</span><b class="cy" id="s-val">—</b></div>
+        </div>
+
+        <div class="ph">Standardiser<span class="sp"></span><em>fitted on train only</em></div>
+        <div class="pb" id="standardiser"></div>
+        <div class="note">
+          Fitted over the <em>training rows only</em>, and the network sees standardised inputs —
+          so the probe is converted before the forward pass, not after.
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+.DS_Store
+
+# .NET — slice 15. bin/ and obj/ are build output; .data/ is the SQLite file, which is
+# runtime state and must never live inside the source tree.
+bin/
+obj/
+server/.data/
+*.user
+# Vite writes the built SPA here for `dotnet publish` to pick up — build output, not source.
+server/NeuralLab.Server/wwwroot/

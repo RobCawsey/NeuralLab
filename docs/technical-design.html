@@ -1,0 +1,2216 @@
+<title>NeuralLab — Technical Design &amp; UI Specification</title>
+<style>
+:root{
+  --paper:#F1F0F3; --paper-2:#E8E6EC; --surface:#FBFAFC;
+  --ink:#1A1823; --ink-2:#4A4757; --ink-3:#7C7889;
+  --rule:#D4D1DC; --rule-2:#C2BECD;
+  --accent:#C77E12; --accent-fill:#E9A13B; --accent-soft:#F6E3C4;
+  --cyan:#2E7E99; --violet:#6B5CC4; --ok:#2C7D60; --bad:#AD3F3A;
+  --shadow:0 1px 2px rgba(26,24,35,.06),0 8px 28px -12px rgba(26,24,35,.22);
+  --display:"Bahnschrift","DIN Alternate","Avenir Next Condensed","Roboto Condensed","Segoe UI",system-ui,sans-serif;
+  --body:"Sitka Text",Charter,"Bitstream Charter",Cambria,Georgia,serif;
+  --mono:"Cascadia Mono","SF Mono","JetBrains Mono",Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#14131C; --paper-2:#1B1A25; --surface:#191822;
+    --ink:#EDECF2; --ink-2:#B2AEBF; --ink-3:#807C93;
+    --rule:#2B2937; --rule-2:#3A3849;
+    --accent:#E9A13B; --accent-fill:#E9A13B; --accent-soft:#3A2E1B;
+    --cyan:#5FB4D0; --violet:#9585E6; --ok:#4FB48C; --bad:#D9625C;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 32px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#14131C; --paper-2:#1B1A25; --surface:#191822;
+  --ink:#EDECF2; --ink-2:#B2AEBF; --ink-3:#807C93;
+  --rule:#2B2937; --rule-2:#3A3849;
+  --accent:#E9A13B; --accent-fill:#E9A13B; --accent-soft:#3A2E1B;
+  --cyan:#5FB4D0; --violet:#9585E6; --ok:#4FB48C; --bad:#D9625C;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 32px -14px rgba(0,0,0,.7);
+}
+/* App mockups keep a fixed dark instrument skin in both page themes — the same trick
+   Evolab's design document uses, and for the same reason: the product is a dark
+   instrument, and re-tinting a screenshot of it per theme would be a lie about the UI. */
+.app{
+  --a-bg:#0E0D15; --a-pnl:#16151F; --a-pnl2:#1F1E2A; --a-line:#2C2A3A;
+  --a-tx:#E4E2EC; --a-dim:#8C8899; --a-faint:#5C5871;
+  --a-am:#E9A13B; --a-cy:#4EA8C4; --a-vi:#8B7BD8; --a-ok:#4FB48C; --a-bad:#D9625C;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);
+  font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+img,svg,canvas{max-width:100%}
+a{color:var(--accent);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--accent-fill);outline-offset:3px;border-radius:2px}
+h1,h2,h3,h4{font-family:var(--display);font-weight:600;text-wrap:balance;margin:0;line-height:1.14;
+  letter-spacing:.005em}
+p{margin:0}
+code,kbd{font-family:var(--mono);font-size:.86em;background:var(--paper-2);
+  padding:.1em .34em;border-radius:3px;border:1px solid var(--rule)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:500}
+
+.wrap{max-width:1500px;margin:0 auto;padding:0 clamp(16px,4vw,44px)}
+.layout{display:grid;grid-template-columns:186px minmax(0,1fr);gap:clamp(24px,4vw,64px);
+  align-items:start}
+@media (max-width:1080px){.layout{grid-template-columns:1fr}}
+
+.rail{position:sticky;top:0;padding:40px 0;max-height:100vh;overflow-y:auto}
+@media (max-width:1080px){.rail{display:none}}
+.rail ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+.rail a{display:flex;gap:9px;padding:5px 8px 5px 10px;text-decoration:none;color:var(--ink-3);
+  font-family:var(--display);font-size:14.5px;border-left:2px solid var(--rule);
+  transition:color .15s,border-color .15s}
+.rail a:hover{color:var(--ink)}
+.rail a.on{color:var(--ink);border-left-color:var(--accent-fill);font-weight:600}
+.rail .num{font-family:var(--mono);font-size:10.5px;padding-top:3px;opacity:.65;
+  font-variant-numeric:tabular-nums}
+
+.doc{padding:40px 0 120px;min-width:0}
+section{padding-top:14px;margin-top:52px;border-top:1px solid var(--rule)}
+section:first-of-type{border-top:0;margin-top:0}
+.col{max-width:68ch}
+.stack{display:flex;flex-direction:column;gap:18px}
+.stack-s{display:flex;flex-direction:column;gap:10px}
+h2{font-size:clamp(27px,3.4vw,36px);margin-bottom:4px}
+h3{font-size:20px;color:var(--ink);margin-top:8px}
+h4{font-size:15.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.lede{font-size:19.5px;color:var(--ink-2);line-height:1.55}
+.sechead{display:flex;flex-direction:column;gap:6px;margin-bottom:22px}
+
+.mast{padding:56px 0 30px}
+.mast h1{font-size:clamp(44px,8vw,86px);letter-spacing:-.012em;line-height:.95}
+.mast h1 em{font-style:normal;color:var(--accent)}
+.mast .sub{font-size:clamp(18px,2.4vw,23px);color:var(--ink-2);max-width:58ch;margin-top:16px}
+.meta{display:flex;flex-wrap:wrap;gap:0;margin-top:26px;border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule)}
+.meta div{flex:1 1 150px;padding:11px 16px 12px 0;display:flex;flex-direction:column;gap:2px}
+.meta dt{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3)}
+.meta dd{margin:0;font-family:var(--display);font-size:15px;color:var(--ink)}
+
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:900px){.g3,.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:600px){.g2,.g3,.g4{grid-template-columns:1fr}}
+
+.card{border:1px solid var(--rule);background:var(--surface);border-radius:3px;padding:16px 18px;
+  display:flex;flex-direction:column;gap:7px}
+.card h4{margin:0;font-size:13px}
+.card p{font-size:15px;color:var(--ink-2);line-height:1.5}
+.card .k{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+
+.pick{border-left:2px solid var(--accent-fill);background:var(--accent-soft);padding:13px 16px;
+  border-radius:0 3px 3px 0;font-size:15.5px}
+.pick strong{font-family:var(--display);letter-spacing:.02em}
+.risk{border:1px solid var(--rule);border-left:2px solid var(--violet);background:var(--surface);
+  padding:13px 16px;border-radius:0 3px 3px 0;font-size:15.5px}
+.risk > .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--violet);display:block;margin-bottom:7px}
+.risk p{margin:0 0 10px}
+.risk p:last-child{margin-bottom:0}
+.risk strong{font-family:var(--display);letter-spacing:.02em;color:var(--ink)}
+
+.tbl{width:100%;overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:560px}
+th{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;padding:10px 14px;border-bottom:1px solid var(--rule-2);
+  font-weight:500;white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--rule);vertical-align:top;color:var(--ink-2)}
+tr:last-child td{border-bottom:0}
+td:first-child{color:var(--ink);font-family:var(--display);font-size:15.5px}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;white-space:nowrap}
+.tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  padding:2px 6px;border-radius:2px;border:1px solid currentColor;white-space:nowrap}
+.t-ok{color:var(--ok)} .t-no{color:var(--bad)} .t-am{color:var(--accent)}
+.t-vi{color:var(--violet)} .t-cy{color:var(--cyan)}
+
+ul.list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+ul.list li{padding-left:18px;position:relative;color:var(--ink-2);font-size:16px}
+ul.list li::before{content:"";position:absolute;left:2px;top:.62em;width:6px;height:1px;
+  background:var(--rule-2)}
+ul.list li strong{color:var(--ink);font-family:var(--display);font-weight:600;letter-spacing:.01em}
+ol.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:9px}
+ol.steps li{color:var(--ink-2);font-size:16px}
+ol.steps li strong{color:var(--ink);font-family:var(--display);font-weight:600}
+
+pre{margin:0;overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:3px;
+  padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--ink-2)}
+pre b{color:var(--accent);font-weight:400}
+pre i{color:var(--ink-3);font-style:normal}
+pre s{color:var(--violet);text-decoration:none}
+
+figure{margin:0;display:flex;flex-direction:column;gap:0}
+.mock{border:1px solid var(--rule-2);border-radius:5px;overflow:hidden;box-shadow:var(--shadow);
+  background:#0E0D15}
+.chrome{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#0A0910;
+  border-bottom:1px solid #2C2A3A}
+.dots{display:flex;gap:5px}
+.dots i{width:8px;height:8px;border-radius:50%;background:#2C2A3A;display:block}
+.chrome .path{font-family:var(--mono);font-size:10.5px;color:#6E6A84;letter-spacing:.04em}
+figcaption{display:flex;gap:10px;padding:10px 2px 0;font-size:14px;color:var(--ink-2);
+  align-items:baseline}
+figcaption b{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--accent);white-space:nowrap;padding-top:2px}
+.notes{display:grid;gap:8px 20px;margin-top:12px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+/* The badge is positioned rather than made a flex item, so that <code> and <em> inside a
+   note stay inline. As flex children they were blockified, and `|w|` rendered as a
+   full-width panel in the middle of a sentence. */
+.notes div{font-size:14px;color:var(--ink-2);line-height:1.45;position:relative;padding-left:25px}
+.notes span{position:absolute;left:0;top:3px;font-family:var(--mono);font-size:10px;
+  color:var(--paper);background:var(--ink-3);border-radius:2px;height:16px;min-width:16px;
+  display:inline-flex;align-items:center;justify-content:center}
+.scrollx{overflow-x:auto}
+</style>
+<style>
+/* ---------- app UI kit (dark, fixed) — mirrors apps/web/index.html ---------- */
+.app{background:var(--a-bg);color:var(--a-tx);font-family:var(--display);font-size:13px;
+  display:grid;user-select:none;min-width:820px}
+.app *{box-sizing:border-box}
+.app .mono{font-family:var(--mono)}
+.tb{display:flex;align-items:center;gap:10px;padding:0 12px;height:42px;background:var(--a-pnl);
+  border-bottom:1px solid var(--a-line);grid-column:1/-1;flex-wrap:nowrap;overflow:hidden}
+.tb .mono,.tb .chip{white-space:nowrap}
+.tb .brand{font-weight:600;letter-spacing:.1em;text-transform:uppercase;font-size:12px;flex:none}
+.tb .brand em{font-style:normal;color:var(--a-am)}
+.tb .sp{flex:1}
+.btn{padding:4px 11px;border-radius:3px;border:1px solid var(--a-line);color:var(--a-tx);
+  background:var(--a-pnl2);font-size:12px;font-family:var(--display);letter-spacing:.02em;flex:none;
+  white-space:nowrap}
+.btn.pri{background:var(--a-am);border-color:var(--a-am);color:#17140C;font-weight:600}
+.btn.gh{background:transparent;color:var(--a-dim)}
+.seg{display:flex;border:1px solid var(--a-line);border-radius:3px;overflow:hidden;flex:none}
+.seg span{text-align:center;padding:3px 10px;font-size:11.5px;color:var(--a-dim);white-space:nowrap}
+.seg span.on{background:var(--a-pnl2);color:var(--a-am)}
+.seg.vi span.on{color:var(--a-vi)}
+.seg.cy span.on{color:var(--a-cy)}
+.seg.w span{flex:1}
+.pnl{background:var(--a-pnl);display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.pnl.l{border-right:1px solid var(--a-line)}
+.pnl.r{border-left:1px solid var(--a-line)}
+.ph{display:flex;align-items:center;gap:8px;padding:0 10px;height:28px;flex:none;
+  border-bottom:1px solid var(--a-line);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--a-dim);font-family:var(--mono);white-space:nowrap}
+.ph .sp{flex:1}
+.ph em{font-style:normal;color:var(--a-faint);letter-spacing:0;text-transform:none;font-size:11px}
+.ph u{text-decoration:none;color:var(--a-faint);font-size:11px}
+/* flex:none matters. As a shrinkable item the readout block was compressed below its own
+   content and the rows drew straight over the next panel header, while .pnl's overflow:hidden
+   clipped the evidence so scrollHeight still reported a clean fit. */
+.pb{padding:9px 10px;display:flex;flex-direction:column;gap:8px;min-height:0;flex:none}
+.tree{display:flex;flex-direction:column;gap:1px;font-size:12.5px}
+.tree div{display:flex;align-items:center;gap:7px;padding:3px 6px;border-radius:3px;color:var(--a-dim)}
+.tree div.on{background:var(--a-pnl2);color:var(--a-tx)}
+.tree div.on s{background:var(--a-am)}
+.tree s{width:5px;height:5px;border-radius:1px;background:var(--a-faint);flex:none;text-decoration:none}
+.tree u{text-decoration:none;margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--a-faint)}
+.fld{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--a-dim)}
+.fld label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fld .in{font-family:var(--mono);font-size:11.5px;color:var(--a-tx);background:var(--a-bg);
+  border:1px solid var(--a-line);border-radius:3px;padding:2px 7px;min-width:58px;text-align:right;
+  font-variant-numeric:tabular-nums}
+.fld .in.am{color:var(--a-am);border-color:#4A3B1F}
+.fld .in.bad{color:var(--a-bad);border-color:#4A2523}
+.slider{height:3px;border-radius:2px;background:var(--a-line);position:relative;flex:1.1}
+.slider i{position:absolute;left:0;top:0;bottom:0;background:var(--a-cy);border-radius:2px}
+.slider b{position:absolute;top:-4px;width:11px;height:11px;border-radius:50%;background:var(--a-tx);
+  transform:translateX(-50%);box-shadow:0 0 0 2px var(--a-pnl)}
+.sl-head{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--a-dim);padding-bottom:3px;border-bottom:1px solid var(--a-line);margin-top:2px}
+.divide{height:1px;background:var(--a-line);margin:2px 0}
+.kv{display:flex;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:11px;
+  color:var(--a-dim);font-variant-numeric:tabular-nums}
+.kv b{color:var(--a-tx);font-weight:400}
+.kv b.am{color:var(--a-am)} .kv b.ok{color:var(--a-ok)} .kv b.bad{color:var(--a-bad)}
+.kv b.cy{color:var(--a-cy)} .kv b.vi{color:var(--a-vi)}
+.chip{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  padding:2px 6px;border-radius:2px;border:1px solid var(--a-line);color:var(--a-dim);white-space:nowrap}
+.chip.am{color:var(--a-am);border-color:#4A3B1F;background:#221A0E}
+.chip.ok{color:var(--a-ok);border-color:#1E4638;background:#0F231C}
+.chip.bad{color:var(--a-bad);border-color:#4A2523;background:#241312}
+.chip.cy{color:var(--a-cy);border-color:#1E3B46;background:#0D1D23}
+.chip.vi{color:var(--a-vi);border-color:#332C55;background:#17142A}
+.chip.live{color:var(--a-am);border-color:#4A3B1F}
+.chip.live::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--a-am);
+  display:inline-block;margin-right:5px;vertical-align:middle}
+.stage{position:relative;background:radial-gradient(120% 90% at 50% 8%,#191826 0%,#0B0A11 78%);
+  min-height:0;overflow:hidden}
+.stage svg{display:block;width:100%;height:100%}
+.hud{position:absolute;display:flex;gap:6px;flex-wrap:wrap}
+.hud.tl{top:10px;left:10px} .hud.tr{top:10px;right:10px} .hud.bl{bottom:10px;left:10px}
+.hud.br{bottom:10px;right:10px}
+.hud .box{background:rgba(14,13,21,.86);border:1px solid var(--a-line);border-radius:3px;
+  padding:6px 9px;display:flex;flex-direction:column;gap:3px}
+.hud .box .lb{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--a-faint)}
+.hud .box .vl{font-family:var(--mono);font-size:15px;color:var(--a-tx);font-variant-numeric:tabular-nums}
+.hud .box .vl.am{color:var(--a-am)} .hud .box .vl.bad{color:var(--a-bad)}
+.bar{display:flex;align-items:center;gap:10px;padding:0 10px;height:34px;background:var(--a-pnl);
+  border-top:1px solid var(--a-line);flex:none;grid-column:1/-1}
+.trk{flex:1;height:18px;position:relative;background:var(--a-bg);border:1px solid var(--a-line);
+  border-radius:3px;overflow:hidden}
+.trk i{position:absolute;top:0;bottom:0;left:0;background:#1C2A31}
+.trk b{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--a-am)}
+.gauge{height:5px;border-radius:3px;background:var(--a-line);overflow:hidden;flex:none}
+.gauge i{display:block;height:100%;border-radius:3px;background:var(--a-am)}
+.legend{display:flex;gap:12px;padding:5px 10px;font-family:var(--mono);font-size:10px;
+  color:var(--a-faint);border-bottom:1px solid var(--a-line);flex:none;flex-wrap:wrap}
+.note{font-size:11.5px;color:var(--a-faint);line-height:1.45;padding:2px 10px 8px}
+.note em{font-style:normal;color:var(--a-dim)}
+/* stepper */
+.st-stage{display:flex;flex-direction:column;gap:1px;padding:7px 11px;border-left:2px solid transparent;
+  color:var(--a-faint)}
+.st-stage b{font-weight:400;font-size:13px}
+.st-stage span{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em}
+.st-stage.done{color:var(--a-dim);border-left-color:var(--a-line)}
+.st-stage.on{color:var(--a-tx);border-left-color:var(--a-am);background:var(--a-pnl2)}
+.st-stage.on span{color:var(--a-am)}
+.st-sub{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--a-faint);margin:10px 0 3px;padding-bottom:3px;border-bottom:1px solid var(--a-line)}
+.st-sub:first-child{margin-top:0}
+.st-row{display:grid;grid-template-columns:96px minmax(0,1fr) 96px;align-items:center;gap:9px}
+.st-lb{font-family:var(--mono);font-size:10.5px;color:var(--a-dim)}
+.st-nt{font-family:var(--mono);font-size:10px;color:var(--a-faint);text-align:right}
+.prose{font-size:13px;line-height:1.55;color:var(--a-tx)}
+.prose.dim{color:var(--a-dim)}
+.prose b{color:var(--a-am);font-weight:400}
+/* challenge cards */
+.ch{display:flex;flex-direction:column;border-bottom:1px solid var(--a-line);padding:7px 11px;gap:5px}
+.ch.open{background:var(--a-pnl2)}
+.ch.ahead{opacity:.45}
+.ch-h{display:grid;grid-template-columns:18px 1fr 14px;align-items:center;gap:8px;font-size:12.5px}
+.ch-n{font-family:var(--mono);font-size:10px;color:var(--a-faint);border:1px solid var(--a-line);
+  border-radius:2px;text-align:center;line-height:15px}
+.ch.done .ch-n{color:var(--a-ok);border-color:#2B4C40}
+.ch-t{color:var(--a-tx)}
+.ch-b{font-size:11.5px;color:var(--a-dim);line-height:1.45}
+.ch-c{display:flex;flex-wrap:wrap;gap:4px}
+.ch-phase{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--a-faint);padding:11px 11px 4px;border-bottom:1px solid var(--a-line)}
+/* narrow-chassis mockup */
+.drawer{position:absolute;top:0;bottom:0;left:0;width:62%;z-index:3;box-shadow:0 0 30px rgba(0,0,0,.6)}
+.scrim{position:absolute;inset:0;background:rgba(8,7,13,.55);z-index:2}
+</style>
+
+<div class="wrap">
+<div class="layout">
+
+<nav class="rail" aria-label="Sections">
+  <ol id="toc">
+    <li><a href="#thesis"><span class="num">01</span> Thesis</a></li>
+    <li><a href="#arch"><span class="num">02</span> Architecture</a></li>
+    <li><a href="#kernels"><span class="num">03</span> The two kernels</a></li>
+    <li><a href="#numerics"><span class="num">04</span> Numerics</a></li>
+    <li><a href="#threads"><span class="num">05</span> Threads &amp; protocol</a></li>
+    <li><a href="#teaching"><span class="num">06</span> Teaching</a></li>
+    <li><a href="#render"><span class="num">07</span> Rendering</a></li>
+    <li><a href="#ui"><span class="num">08</span> UI specification</a></li>
+    <li><a href="#chassis"><span class="num">09</span> Responsive chassis</a></li>
+    <li><a href="#server"><span class="num">10</span> The server</a></li>
+    <li><a href="#slices"><span class="num">11</span> Slices</a></li>
+    <li><a href="#stack"><span class="num">12</span> Stack &amp; choices</a></li>
+    <li><a href="#wrong"><span class="num">13</span> What will go wrong</a></li>
+  </ol>
+</nav>
+
+<main class="doc">
+
+<header class="mast">
+  <p class="eyebrow">Technical design &amp; UI specification &middot; v1 &middot; pre-slice-0</p>
+  <h1>Neural<em>Lab</em></h1>
+  <p class="sub">A browser workbench for building a Kohonen map and a multilayer perceptron,
+  training them on data you can see, and learning how both work by watching them happen.
+  Personal project, built in slices. Teaching tool first, framework never.</p>
+  <div class="meta">
+    <div><dt>Sibling</dt><dd>Evolab — same chassis, same rules</dd></div>
+    <div><dt>Networks</dt><dd>Kohonen SOM &middot; MLP + backprop</dd></div>
+    <div><dt>Runtime</dt><dd>TypeScript, no ML framework</dd></div>
+    <div><dt>Slices</dt><dd>0 &ndash; 16</dd></div>
+  </div>
+</header>
+
+<!-- ==================== 1 ==================== -->
+<section id="thesis">
+  <div class="sechead"><p class="eyebrow">01</p><h2>Two algorithms, one instrument</h2></div>
+  <div class="col stack">
+    <p class="lede">Most neural-network teaching material shows you a diagram of backpropagation
+    and then hands you a library that does it for you. The diagram and the library never meet.
+    NeuralLab closes that gap: the arrows in the diagram are the numbers on screen, and the
+    numbers on screen come from the code that is actually training.</p>
+
+    <p>Evolab made a genetic algorithm watchable by pausing it between operators and showing each
+    one acting on real genomes. NeuralLab does the same thing twice, because there are two
+    algorithms here and they fail in opposite ways:</p>
+
+    <ul class="list">
+      <li><strong>The multilayer perceptron</strong> is supervised. It is told the answer, measures
+      how wrong it was, and pushes that error backwards through the network. Its failures are
+      numerical — gradients that vanish, steps that overshoot, a model that memorises its
+      training set.</li>
+      <li><strong>The Kohonen self-organising map</strong> is unsupervised. Nobody tells it
+      anything. A grid of nodes competes to be nearest each sample, and the winner drags its
+      neighbours with it, so the grid ends up folded through the data like a net. Its failures are
+      structural — a map that stays twisted, a schedule that cools too fast, a lattice that tears.</li>
+    </ul>
+
+    <p>Putting them in one app is not a convenience. It is the last lesson: the same dataset,
+    seen once through a boundary the network was told to find and once through a structure it
+    found on its own.</p>
+
+    <div class="pick"><strong>The one rule.</strong> Every screen that explains the algorithm is
+    driven by the algorithm. Not an animation of backprop — backprop, paused. If a panel would
+    need its own copy of the maths to draw itself, the panel is wrong, not the architecture.</div>
+
+    <h3>Who it is for</h3>
+    <p>Somebody who can program, has heard of neural networks, and has never seen one learn.
+    They should be able to open the page, press one button, and watch a network go from a
+    scribble to a boundary in under ten seconds — and then be able to break it on purpose.</p>
+
+    <h3>What it is not</h3>
+    <ul class="list">
+      <li><strong>Not a framework.</strong> No autodiff, no graph compiler, no GPU kernels. Every
+      gradient in this project is written out by hand next to the forward pass it belongs to,
+      because a reader has to be able to follow it.</li>
+      <li><strong>Not a benchmark.</strong> Networks here are tens to low thousands of weights.
+      That is not a limitation to apologise for; it is the size at which a network is legible.</li>
+      <li><strong>Not a notebook.</strong> No code cells. The controls are the API.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ==================== 2 ==================== -->
+<section id="arch">
+  <div class="sechead"><p class="eyebrow">02</p><h2>Layers, and which way they point</h2></div>
+  <div class="col stack">
+    <p>Four packages and an app. Dependencies point one way only, and the reason is testability:
+    everything below <code>apps/web</code> must run under Node in a Vitest file with no DOM,
+    no canvas, and no timers. If it cannot, the visualisation and the algorithm have grown into
+    each other, which is the failure mode this whole layout exists to prevent.</p>
+
+<pre>packages/core/   <i>Rng, Float32 helpers, Dataset, split, normalise, metrics</i>
+packages/mlp/    <i>layers, init, forward, <b>backward</b>, optimisers, losses, trace</i>
+packages/som/    <i>lattice, bmu, neighbourhood, schedules, u-matrix, qe/te</i>
+packages/data/   <i>dataset generators — spirals, moons, blobs, colours, iris, digits</i>
+apps/web/        <i>Vite app — canvas render, Three.js, workers, panels</i>
+server/          <i>ASP.NET Core + SQLite — save/share, slice 15</i>
+docs/            <i>this document, the implementation guide, the code guide</i>
+
+           <s>core</s>
+          /  |  \
+      <s>mlp</s>  <s>som</s>  <s>data</s>       none of these four import each other
+          \  |  /
+         <s>apps/web</s>          the only place that knows what a canvas is</pre>
+
+    <p><code>mlp</code> and <code>som</code> never import one another. They share <code>core</code>'s
+    <code>Rng</code> and <code>Dataset</code>, and that is the entire overlap. A shared
+    <code>Trainer</code> abstraction was considered and rejected in about five minutes: the two
+    loops have different inputs, different state, different stopping conditions and different
+    failure modes, and the only thing an abstraction over them could express is that they both
+    have a step function.</p>
+
+    <h3>Invariants</h3>
+    <p>These must survive between sessions. Breaking one is a bug even when the app still works.</p>
+
+    <ol class="steps">
+      <li><strong>Seeded RNG only.</strong> No <code>Math.random()</code> anywhere in
+      <code>packages/</code>. Weight initialisation, batch shuffling, dropout masks and dataset
+      generation all draw from an <code>Rng</code> instance threaded through as a parameter.
+      This is what makes runs reproducible and the golden test possible.</li>
+
+      <li><strong>Fixed step granularity.</strong> Training advances in whole minibatch steps.
+      The render loop drains steps that have completed; it never trains "for a frame". The same
+      rule as Evolab's fixed physics timestep, for the same reason — a loop that does variable
+      work per frame produces a different answer on a different machine.</li>
+
+      <li><strong>Weights are flat <code>Float32Array</code>, row-major, owned by their layer.</strong>
+      No arrays of neuron objects, no nested arrays. Three consequences, all wanted: they post to a
+      worker without a structured clone, the renderer indexes them directly, and a whole network
+      serialises as one buffer.</li>
+
+      <li><strong>Packages stay pure.</strong> No DOM, no <code>window</code>, no timers, no I/O,
+      no <code>console</code>. If something needs to report progress it takes a callback.</li>
+
+      <li><strong>Nothing browser-specific below <code>apps/web</code>.</strong> Workers, canvas,
+      Three.js, storage, URL parsing — all live in the app.</li>
+
+      <li><strong>No autodiff, and no library that provides one.</strong> This is the load-bearing
+      decision of the whole project and it is discussed in §12. A hand-written backward pass is the
+      artefact being taught.</li>
+
+      <li><strong>Tests are never deleted or loosened to make a change pass.</strong> If one fails,
+      either the change is wrong or the change is deliberate — say which, in the commit message,
+      and update the expected value in the same commit.</li>
+    </ol>
+
+    <h3>Two tests that are not like the others</h3>
+    <p>Every project has unit tests. Two here do a different job and neither is optional.</p>
+
+    <div class="grid g2" style="max-width:none">
+      <div class="card">
+        <h4>Gradient check</h4>
+        <p class="k">packages/mlp/__tests__/gradcheck.test.ts</p>
+        <p>For every layer type and every activation, compare the analytic gradient against a
+        central finite difference at <code>h = 1e-4</code>, on a fixed seed, and require agreement
+        to a relative <code>1e-5</code>.</p>
+        <p>This exists because <em>a wrong gradient still trains.</em> A sign error in one term or a
+        missing transpose typically slows learning rather than stopping it, so the loss curve
+        still goes down and nothing looks broken. Finite differences do not care how plausible
+        the curve looks.</p>
+      </div>
+      <div class="card">
+        <h4>Golden run</h4>
+        <p class="k">packages/mlp/__tests__/golden.test.ts</p>
+        <p>Seed 4417, two-moons at 240 samples, 2&ndash;8&ndash;8&ndash;2 with tanh, SGD at 0.1,
+        batch 16, 400 steps. Pin the final training loss to four decimals and the final weight
+        checksum to one integer.</p>
+        <p>Gradient check proves the maths is <em>right</em>. This proves it is <em>unchanged</em>.
+        Refactoring the inner loop is safe exactly when this number does not move, and every
+        "harmless" tidy-up gets checked against it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 3 ==================== -->
+<section id="kernels">
+  <div class="sechead"><p class="eyebrow">03</p><h2>What is actually being learned</h2></div>
+  <div class="col stack">
+    <h3>The perceptron kernel</h3>
+    <p>A network is an array of dense layers. Each layer owns two buffers and nothing else.</p>
+
+<pre>interface Dense {
+  readonly inputs: number;
+  readonly units: number;
+  readonly act: <b>'relu' | 'tanh' | 'sigmoid' | 'linear' | 'softmax'</b>;
+  W: Float32Array;   <i>// units * inputs, row-major: W[u * inputs + i]</i>
+  b: Float32Array;   <i>// units</i>
+}
+
+interface Net {
+  readonly layers: Dense[];
+  readonly loss: <b>'mse' | 'crossEntropy'</b>;
+}</pre>
+
+    <p>Row-major with the unit as the outer index is chosen so that the forward pass walks
+    <code>W</code> linearly — one unit's weights are contiguous — and so that the weight-matrix
+    heatmap in §7 is a straight <code>ImageData</code> blit with no transpose.</p>
+
+    <p>The backward pass is written as its own function per activation, immediately below the
+    forward one, sharing the file and the naming. There is no <code>Layer</code> class with a
+    virtual <code>backward()</code>: the whole point is that a reader can put a finger on
+    <code>dz = da * (1 - a * a)</code> and see it is the derivative of <code>tanh</code>.</p>
+
+    <p>Optimisers are plain functions over a layer's buffers plus their own state:
+    <strong>SGD</strong>, <strong>SGD with momentum</strong>, <strong>Adam</strong>. Adam is in
+    from slice 7 rather than later because its bias-correction terms are the classic
+    "it still trains, it is just wrong" bug, and the gradient check does not catch optimiser bugs
+    — a dedicated test compares one Adam step against a hand-computed value.</p>
+
+    <h3>The Kohonen kernel</h3>
+<pre>interface Som {
+  readonly cols: number; readonly rows: number;
+  readonly dim: number;                <i>// input dimensionality</i>
+  readonly topology: <b>'rect' | 'hex'</b>;
+  W: Float32Array;                     <i>// cols * rows * dim, node-major</i>
+  hits: Int32Array;                    <i>// samples won, per node</i>
+}
+
+interface Schedule {
+  readonly alpha0: number; readonly sigma0: number;
+  readonly decay: <b>'exponential' | 'linear' | 'inverse'</b>;
+  readonly steps: number;              <i>// the horizon both decays are written against</i>
+}</pre>
+
+    <p>One step is: draw a sample, find the best matching unit by squared Euclidean distance over
+    all nodes, then move every node toward the sample by
+    <code>&alpha;(t) &middot; h(d, t)</code>, where <code>d</code> is the distance
+    <em>in the lattice</em>, not in the data. That distinction is the whole algorithm and the UI
+    is built to make it unmissable — §8's SOM stepper draws the lattice neighbourhood and the input
+    space side by side.</p>
+
+    <p>Both decays are written against an explicit <code>steps</code> horizon rather than a
+    per-step multiplier. A multiplier makes "how fast does it cool" depend on how long you happen
+    to run, which is exactly the confusion challenge&nbsp;10 exists to create deliberately.</p>
+
+    <h4 style="margin-top:6px">Measuring a map that nobody labelled</h4>
+    <ul class="list">
+      <li><strong>Quantisation error</strong> — mean distance from a sample to its BMU. Goes down
+      as the map fits the data. Charted per epoch, the SOM's answer to a loss curve.</li>
+      <li><strong>Topographic error</strong> — the fraction of samples whose best and second-best
+      nodes are <em>not</em> lattice neighbours. This is the number that catches a twisted map, and
+      it is the one a loss curve cannot see. Watch challenge&nbsp;10 drive QE down while TE climbs.</li>
+      <li><strong>U-matrix</strong> — for each node, the mean distance to its lattice neighbours.
+      Drawn as a heatmap it shows ridges where the data has gaps, which is cluster structure
+      recovered without a single label.</li>
+      <li><strong>Component planes</strong> — one heatmap per input dimension, showing how that
+      feature varies across the map. This is how a 13-dimensional map becomes readable.</li>
+    </ul>
+
+    <h3>Datasets</h3>
+    <p><code>packages/data</code> generates everything from a seed; nothing is fetched at runtime
+    except the digits blob.</p>
+
+    <div class="tbl"><table>
+      <thead><tr><th>Set</th><th>Dim</th><th>Size</th><th>For</th><th>Teaches</th></tr></thead>
+      <tbody>
+        <tr><td>XOR</td><td class="num">2</td><td class="num">4 &ndash; 400</td><td><span class="tag t-vi">MLP</span></td><td>why one layer is not enough</td></tr>
+        <tr><td>Two moons</td><td class="num">2</td><td class="num">240</td><td><span class="tag t-vi">MLP</span></td><td>a curved boundary; the default</td></tr>
+        <tr><td>Concentric circles</td><td class="num">2</td><td class="num">240</td><td><span class="tag t-vi">MLP</span></td><td>a boundary no line can make</td></tr>
+        <tr><td>Two spirals</td><td class="num">2</td><td class="num">400</td><td><span class="tag t-vi">MLP</span></td><td>capacity, and patience</td></tr>
+        <tr><td>Gaussian blobs</td><td class="num">2</td><td class="num">k &times; 80</td><td><span class="tag t-vi">MLP</span> <span class="tag t-cy">SOM</span></td><td>clusters both ways</td></tr>
+        <tr><td>Colour cube</td><td class="num">3</td><td class="num">1 500</td><td><span class="tag t-cy">SOM</span></td><td>the classic — the map <em>is</em> the picture</td></tr>
+        <tr><td>Animals</td><td class="num">13</td><td class="num">16</td><td><span class="tag t-cy">SOM</span></td><td>Kohonen's own semantic map, labelled</td></tr>
+        <tr><td>Iris</td><td class="num">4</td><td class="num">150</td><td><span class="tag t-cy">SOM</span> <span class="tag t-vi">MLP</span></td><td>component planes on real data</td></tr>
+        <tr><td>Digits 8&times;8</td><td class="num">64</td><td class="num">1 200</td><td><span class="tag t-cy">SOM</span> <span class="tag t-vi">MLP</span></td><td>confusion matrix; a map of handwriting</td></tr>
+      </tbody>
+    </table></div>
+
+    <p style="margin-top:14px">The colour cube earns its place twice: it is the demonstration
+    everyone has seen, and it is the only dataset where the node's weight vector can be drawn
+    <em>as itself</em> — a node's three weights are literally a colour. Every other visualisation
+    in the SOM half is a way of recovering that legibility for data that is not already a colour.</p>
+
+    <p>Digits ships as a base64 blob of roughly 78&nbsp;kB (1200 &times; 64 bytes) inside the
+    module. That is a real cost against a bundle that is otherwise tiny, and it buys the two
+    screens — a confusion matrix and a SOM of handwriting — that make the app look like it is
+    about machine learning rather than about toy data. It arrives in slice 16 so the decision can
+    be reversed cheaply.</p>
+  </div>
+</section>
+
+<!-- ==================== 4 ==================== -->
+<section id="numerics">
+  <div class="sechead"><p class="eyebrow">04</p><h2>Determinism, scoped to what it is for</h2></div>
+  <div class="col stack">
+    <p>The golden test and the "reopen a saved run" feature both assume a run replays. It is worth
+    being exact about how far that assumption reaches, because the honest answer is narrower than
+    it looks and finding out later would be expensive.</p>
+
+    <ul class="list">
+      <li><strong>What is exactly specified.</strong> IEEE-754 <code>+ &minus; &times; &divide;</code>
+      and <code>Math.sqrt</code> are correctly rounded and identical on every conforming engine.
+      A dot product therefore reproduces bit-for-bit, <em>provided the loop order is fixed</em> —
+      which invariant 3's flat row-major layout guarantees.</li>
+      <li><strong>What is not.</strong> <code>Math.exp</code>, <code>Math.tanh</code>,
+      <code>Math.log</code> and <code>Math.pow</code> are implementation-defined in ECMAScript.
+      V8, SpiderMonkey and JavaScriptCore may differ in the last unit in the last place, and V8 has
+      changed its own implementation between versions.</li>
+    </ul>
+
+    <div class="pick"><strong>So determinism is scoped to one engine.</strong> A run replays
+    bit-identically on the same browser and version. The golden test runs under Node in CI, where
+    the engine is pinned, and its comment says all of this so that the first person to see a browser
+    disagree in the fifth decimal does not go looking for a bug in backprop.</div>
+
+    <p>The alternative — shipping our own polynomial <code>exp</code> and <code>tanh</code> — was
+    considered and rejected. It would buy cross-engine reproducibility for a project where nobody
+    is comparing two browsers, at the cost of putting an approximation nobody can check between the
+    reader and the activation function they came here to understand.</p>
+
+    <h3>Float32 storage, Float64 accumulation</h3>
+    <p>Weights are stored as <code>Float32Array</code> and every intermediate is a plain JavaScript
+    number, which is a double. So a dot product accumulates at full double precision and rounds once
+    on store. This is deliberate and it is what the mainstream frameworks do; the alternative,
+    rounding after every multiply&ndash;add, would be both slower and less accurate.</p>
+
+    <div class="risk"><span class="lbl">Amendment &middot; slice 2 &middot; what "intermediate" means</span>
+      <p>This section always said every intermediate is a double, and slice 1 nonetheless stored
+      the per-layer activations in a <code>Float32Array</code> &mdash; reading invariant 3 as
+      "float32 everywhere" when it is specifically about <em>weights</em>, which are state and get
+      transferred. Activations are not state; nothing posts them anywhere.</p>
+      <p><strong>It cost more than it looks.</strong> Rounding twice per layer put roughly 1e-7 of
+      relative noise on the loss, which put a floor of <strong>2.5e-3</strong> under the slice-2
+      gradient check &mdash; small enough to look like a subtly wrong gradient rather than a
+      measurement limit, and the backward pass was in fact perfect. As doubles the same check
+      agrees to <strong>9.5e-10</strong>. Scratch and gradient buffers are
+      <code>Float64Array</code>; <code>W</code> and <code>b</code> stay <code>Float32Array</code>.</p>
+    </div>
+
+    <p>The consequence to remember: <code>W[i] += dw</code> on a <code>Float32Array</code> rounds.
+    Very small updates — a learning rate of 1e&minus;7 against a weight near 1 — are silently lost,
+    because the increment falls below the ULP. That is a real effect, it is a good lesson, and
+    challenge&nbsp;4 puts a reader in front of it with a diagnostic that names it rather than
+    leaving them to conclude the app is broken.</p>
+
+    <h3>Initialisation</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Scheme</th><th>Draw</th><th>Default for</th><th>Why it is offered</th></tr></thead>
+      <tbody>
+        <tr><td>He</td><td class="num">N(0, 2/n_in)</td><td>relu</td><td>keeps activation variance stable through depth</td></tr>
+        <tr><td>Glorot</td><td class="num">U(&plusmn;&radic;(6/(n_in+n_out)))</td><td>tanh, sigmoid</td><td>the standard for saturating units</td></tr>
+        <tr><td>Small random</td><td class="num">U(&plusmn;0.05)</td><td>&mdash;</td><td>the naive choice; watch it fail with depth</td></tr>
+        <tr><td>Zeros</td><td class="num">0</td><td>&mdash;</td><td><span class="tag t-am">teaching</span> symmetry never breaks</td></tr>
+      </tbody>
+    </table></div>
+    <p style="margin-top:14px">Zeros is in the list on purpose. With every weight identical, every
+    hidden unit computes the same thing and receives the same gradient forever, and the network
+    graph shows it directly: every edge into row 2 is the same colour as every edge into row 5,
+    and stays that way. It is the fastest way to make "symmetry breaking" mean something.</p>
+  </div>
+</section>
+
+<!-- ==================== 5 ==================== -->
+<section id="threads">
+  <div class="sechead"><p class="eyebrow">05</p><h2>Two threads, and what crosses between them</h2></div>
+  <div class="col stack">
+    <p>Training runs in one Web Worker. The main thread renders and never trains — not even one
+    step, not even while paused, because a training call on the main thread is a dropped frame and
+    the fixed-step invariant then has two implementations.</p>
+
+    <p>Evolab needed four workers because a genetic algorithm is embarrassingly parallel. Nothing
+    here is: gradient descent is a sequential chain, and a 2&ndash;16&ndash;16&ndash;2 network is
+    small enough that the interesting bottleneck is not arithmetic at all. One worker, and the
+    second core goes to the renderer.</p>
+
+<pre>type ToWorker =
+  | { type: 'init';  setup: TrainSetup }
+  | { type: 'run';   untilStep: number }
+  | { type: 'pause' }
+  | { type: 'trace'; requestId: number; sampleIndex: number }   <i>// one stepper frame</i>
+  | { type: 'probe'; requestId: number; res: number }           <i>// decision field</i>
+  | { type: 'poke';  layer: number; index: number; value: number }
+
+type FromWorker =
+  | { type: 'ready';  initMs: number }
+  | { type: 'step';   metrics: StepMetrics; weights: Float32Array; diag: Diagnostics }
+  | { type: 'trace';  requestId: number; frames: TraceFrame[] }
+  | { type: 'probe';  requestId: number; res: number; field: <b>Float32Array</b> }
+  | { type: 'paused'; step: number }
+  | { type: 'error';  message: string }</pre>
+
+    <h3>What gets copied and what gets transferred</h3>
+    <p>Evolab transferred everything, because its payload was a 576-cell archive that it could not
+    afford to clone. Here the arithmetic points the other way for one message and the same way for
+    the other, so the rule is stated per message rather than adopted wholesale:</p>
+
+    <ul class="list">
+      <li><strong>Weights are copied.</strong> A 2&ndash;16&ndash;16&ndash;2 network is 354 floats —
+      1.4&nbsp;kB. Even a 64&ndash;128&ndash;128&ndash;10 network is 26&nbsp;k floats, 106&nbsp;kB. A
+      transfer would detach the worker's own buffer, so the worker would have to allocate a fresh
+      copy anyway; delta-encoding would cost more code than the copy costs bandwidth. The worker
+      posts the whole vector, and reports are <em>throttled to about 20 Hz</em> rather than sent
+      every step, because at 4000 steps/s nothing on screen can consume them.</li>
+      <li><strong>The decision field is transferred.</strong> At 128&nbsp;&times;&nbsp;128 it is
+      16&nbsp;384 floats, and it is regenerated from scratch every time, so the worker has no use
+      for the buffer after posting. This is the one place the transfer list is worth the care.</li>
+    </ul>
+
+    <h3>The decision field is the expensive thing, not training</h3>
+    <p>This is the throughput result that shapes the whole UI, and it is worth showing the
+    arithmetic. Figures are a <em>budget</em>, not a measurement — nothing is built yet.</p>
+
+    <div class="tbl"><table>
+      <thead><tr><th>Work</th><th>Multiply&ndash;adds</th><th>Budget @ ~150 M MAC/s</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>One training step<br><span style="font-size:13px;color:var(--ink-3)">batch 16, 2&ndash;16&ndash;16&ndash;2</span></td><td class="num">16 &times; 320 &times; 3 &asymp; 15 k</td><td class="num">0.1 ms</td><td><span class="tag t-ok">free</span></td></tr>
+        <tr><td>Decision field @ 64&sup2;</td><td class="num">4 096 &times; 320 &asymp; 1.3 M</td><td class="num">~9 ms</td><td><span class="tag t-am">throttle</span></td></tr>
+        <tr><td>Decision field @ 128&sup2;</td><td class="num">16 384 &times; 320 &asymp; 5.2 M</td><td class="num">~35 ms</td><td><span class="tag t-am">paused only</span></td></tr>
+        <tr><td>Decision field @ 256&sup2;</td><td class="num">65 536 &times; 320 &asymp; 21 M</td><td class="num">~140 ms</td><td><span class="tag t-no">export only</span></td></tr>
+        <tr><td>SOM step, 12&times;12 lattice, dim 3</td><td class="num">144 &times; 3 &times; 2 &asymp; 0.9 k</td><td class="num">&lt; 0.01 ms</td><td><span class="tag t-ok">free</span></td></tr>
+        <tr><td>U-matrix, 12&times;12</td><td class="num">144 &times; 4 &times; 3 &asymp; 1.7 k</td><td class="num">&lt; 0.01 ms</td><td><span class="tag t-ok">every step</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <p style="margin-top:14px">So: the field renders at 64&sup2; while training, on a
+    150&nbsp;ms throttle, and re-renders at 128&sup2; the moment the run pauses. The
+    resolution is printed next to it, because a reader who notices the boundary getting crisper
+    when they hit pause deserves to know it is the drawing and not the network.</p>
+
+    <p>The SOM half needs no worker at all by this arithmetic. It gets one anyway, so that the
+    pause/step/trace protocol has exactly one implementation and the stepper does not become two
+    different mechanisms wearing the same button.</p>
+
+    <div class="risk"><span class="lbl">Consequence worth stating</span>
+      <p>Reports at 20 Hz mean the loss chart is sampled, not complete — at 4000 steps/s it draws
+      one point in two hundred. <strong>Per-step loss is therefore accumulated in the worker and
+      posted as a min/mean/max band</strong>, not as a single sampled value. A chart that samples
+      a noisy series and draws it as a line is a chart that invents smoothness the run did not have,
+      and minibatch loss is very noisy.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 6 ==================== -->
+<section id="teaching">
+  <div class="sechead"><p class="eyebrow">06</p><h2>Teaching by instrument</h2></div>
+  <div class="col stack">
+    <p>Three stages of the same application, switched in the toolbar, nothing locked in either
+    direction. A stage decides which panels are present — <code>data-stage</code> on
+    <code>&lt;body&gt;</code>, <code>.explorer-only</code> and <code>.lab-only</code> in CSS — and
+    nothing else. Switching never restarts a run.</p>
+
+    <div class="grid g3" style="max-width:none">
+      <div class="card"><h4>Guided</h4><p class="k">the first ten seconds</p>
+        <p>Four steps: pick data, pick a shape, watch it learn, see what changed. No hyperparameters
+        at all. Ends by replaying the network's very first guess against its last one.</p></div>
+      <div class="card"><h4>Explorer</h4><p class="k">the working surface</p>
+        <p>Full controls, the diagnostics column, the decision field, the challenge track. This is
+        where somebody spends an hour.</p></div>
+      <div class="card"><h4>Lab</h4><p class="k">the workbench</p>
+        <p>Architecture editor, optimiser internals, per-layer gradient statistics, the weight
+        matrices themselves, throughput counters.</p></div>
+    </div>
+
+    <h3>The stepper</h3>
+    <p>The teaching screen, and the single most important thing in the project. A full-screen
+    view that pauses the algorithm between operators and shows each one acting on real values.</p>
+
+    <p>It drives <code>trainStep(net, batch, { trace: true })</code> — the same function the worker
+    drains at full speed. A test asserts that traced and untraced runs produce bit-identical
+    weights, because the moment that stops being true the screen becomes a lie. This is Evolab's
+    rule, lifted intact, and it is the reason the trace flag lives inside the kernel rather than
+    in a parallel "explain" implementation.</p>
+
+    <div class="grid g2" style="max-width:none">
+      <div class="card"><h4>MLP &mdash; seven stages</h4>
+        <p class="k">sample &rarr; forward &times; n &rarr; loss &rarr; backward &times; n &rarr; update</p>
+        <p>One sample at a time. Each forward stage shows the layer's weight row, the pre-activation
+        <code>z</code>, and the activation <code>a</code>. Each backward stage shows
+        <code>&delta;</code> arriving, the local derivative, and <code>&delta;</code> leaving. The
+        update stage shows <code>&Delta;w</code> per weight with the learning rate applied and the
+        sign coloured.</p></div>
+      <div class="card"><h4>SOM &mdash; five stages</h4>
+        <p class="k">sample &rarr; distances &rarr; BMU &rarr; neighbourhood &rarr; update</p>
+        <p>Distances shown as the lattice heat-mapped by <code>&#8214;x &minus; w&#8214;</code>.
+        BMU marked. The neighbourhood stage draws <code>h(d,t)</code> falling off across the lattice
+        with the current &sigma; printed, and the update stage shows every node's movement as a
+        vector in input space, scaled by its own <code>h</code>.</p></div>
+    </div>
+
+    <h3>The concept ladder</h3>
+    <p>Twelve cards in the left column, each naming the idea it teaches and each configuring the
+    app in one click. Nothing is locked; cards past the frontier are dimmed as guidance and stay
+    clickable, because a reader who already knows the material starts wherever they like.</p>
+
+    <div class="tbl"><table>
+      <thead><tr><th>#</th><th>Card</th><th>What it sets up</th><th>Concept</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>One line is not enough</td><td>no hidden layer, XOR</td><td>linear separability <span class="tag t-vi">amended</span></td></tr>
+        <tr><td class="num">2</td><td>Give it a middle</td><td>one hidden layer, same data</td><td>non-linearity</td></tr>
+        <tr><td class="num">3</td><td>Too big a step</td><td>lr 500, moons</td><td>the accuracy collapses <span class="tag t-vi">amended</span></td></tr>
+        <tr><td class="num">4</td><td>Too small a step</td><td>lr 1e&minus;6, 2000 steps</td><td>step size, and float32 ULP</td></tr>
+        <tr><td class="num">5</td><td>All the same to begin with</td><td>zero init, 8 hidden units</td><td>symmetry breaking</td></tr>
+        <tr><td class="num">6</td><td>The signal fades</td><td>6 sigmoid layers &rarr; swap to relu</td><td>vanishing gradients</td></tr>
+        <tr><td class="num">7</td><td>Learning the noise</td><td>8 samples, 64 units, no val</td><td>overfitting</td></tr>
+        <tr><td class="num">8</td><td>Knowing when to stop</td><td>same run + validation split</td><td>generalisation</td></tr>
+        <tr><td class="num">9</td><td>A grid that finds its own shape</td><td>SOM 12&times;12 on a ring</td><td>competitive learning</td></tr>
+        <tr><td class="num">10</td><td>Cooling too fast</td><td>&sigma; decays in 50 steps</td><td>the schedule; QE down, TE up</td></tr>
+        <tr><td class="num">11</td><td>The map has edges</td><td>U-matrix on 3 blobs, unlabelled</td><td>structure without labels</td></tr>
+        <tr><td class="num">12</td><td>Two ways to see one dataset</td><td>SOM and MLP side by side</td><td>unsupervised vs supervised</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 2 &middot; cards 1 and 3</span>
+      <p><strong>Two of these cards described an outcome the build does not produce.</strong> Both
+      were corrected against measurements rather than reasoning, and both turned out to teach
+      something better than the version written here first.</p>
+      <p><strong>Card 1 said a flat network cannot beat chance on XOR. The linear ceiling is 75%,
+      not 50%.</strong> A line can isolate one quadrant &mdash; say (+,&nbsp;+) &mdash; and answer
+      "the other class" everywhere else, which is right for three quadrants out of four. Measured
+      across seven split seeds the flat network lands between 0.29 and 0.77 and never higher; one
+      hidden layer reaches 1.0000. So the card now says <em>it gets three quarters of them and can
+      never get the last quarter, however long you train it</em>, which is both true and a sharper
+      statement of what a missing hidden layer costs.</p>
+      <p><strong>Card 3 said the loss goes to NaN at a learning rate of 3.0. Neither half is
+      right.</strong> With tanh hidden units, a softmax output and cross-entropy, every factor in
+      the gradient is bounded &mdash; |a&nbsp;&minus;&nbsp;y|&nbsp;&le;&nbsp;1, tanh&prime;&nbsp;&le;&nbsp;1,
+      |a|&nbsp;&le;&nbsp;1 &mdash; so the weights grow linearly with the learning rate and never
+      overflow. Measured over 400 steps on two moons: lr&nbsp;3 reaches <strong>0.988</strong>
+      accuracy, <em>better</em> than lr&nbsp;0.1; lr&nbsp;10 falls to 0.744; lr&nbsp;500 collapses
+      to 0.500 with a loss of 13.8 and max&nbsp;|w| of 1.4e4 &mdash; without a single non-finite
+      number anywhere.</p>
+      <p>The learning-rate control therefore runs to 500 rather than to 3, and the card's outcome
+      is <em>the accuracy collapses to chance and the loss stops falling</em>. §7's max-shift is
+      what makes that legible instead of blank: at those weights the logits reach 1e5, and an
+      unshifted <code>exp</code> would fill every panel with NaN. Diverging is the lesson; NaN
+      everywhere would be a bug.</p>
+    </div>
+
+    <h3>Explanations that cannot rot</h3>
+    <p>Every card ends with an afterword, and afterwords are <strong>data that branches on the
+    outcome</strong>, never fixed strings. A card that asserts "the loss diverged" when it happened
+    not to teaches the reader to stop reading. Card 3 is the sharp case: at lr 3.0 the loss usually
+    goes to NaN and occasionally just oscillates, so its afterword has two branches, and a test
+    renders both against synthetic outcomes and asserts the non-divergent branch does not use
+    the word.</p>
+
+    <p>The same rule one level up: help text is generated from the data it describes. The shortcut
+    list comes from <code>ui/keymap.ts</code>, the challenge summaries from the card definitions,
+    the dataset descriptions from <code>packages/data</code>. Anything a human retypes is a second
+    description that rots.</p>
+  </div>
+</section>
+
+<!-- ==================== 7 ==================== -->
+<section id="render">
+  <div class="sechead"><p class="eyebrow">07</p><h2>An instrument, not a document</h2></div>
+  <div class="col stack">
+    <p>Canvas 2D for everything that repaints while training. DOM for controls and text. Three.js,
+    dynamically imported into its own chunk, for the 3D views only. No SVG in the running app — the
+    SVG in this document is a drawing of the product, not the product.</p>
+
+    <h3>Colour is data</h3>
+    <p>The palette is Evolab's, unchanged, and every hue has exactly one job. A legend that has to
+    explain itself twice on two panels means the encoding is wrong.</p>
+
+    <div class="tbl"><table>
+      <thead><tr><th>Hue</th><th>Means</th><th>Appears as</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag t-am">amber</span></td><td>look here now</td><td>best value, active node, BMU, positive weight</td></tr>
+        <tr><td><span class="tag t-cy">cyan</span></td><td>the other end of a signed scale</td><td>negative weight, validation series, the SOM half</td></tr>
+        <tr><td><span class="tag t-vi">violet</span></td><td>a secondary series</td><td>gradient norms, the MLP half in the switch</td></tr>
+        <tr><td><span class="tag t-ok">green</span></td><td>a threshold met</td><td>converged, concept known, card done</td></tr>
+        <tr><td><span class="tag t-no">red</span></td><td>a threshold broken</td><td>diverged, NaN, dead unit, validation rising</td></tr>
+      </tbody>
+    </table></div>
+
+    <p style="margin-top:14px">Signed quantities — weights, gradients, &Delta;w — use a diverging
+    cyan&nbsp;&harr;&nbsp;panel&nbsp;&harr;&nbsp;amber ramp with the panel background at zero, so a
+    dead weight is invisible and that is the correct impression. Unsigned quantities — U-matrix
+    distance, hit counts, activation magnitude — use the single monotone-luminance ramp Evolab's
+    behaviour map already uses, and it is normalised to the current maximum with that maximum
+    printed underneath.</p>
+
+    <h3>Nine drawings, and how each one is drawn</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Panel</th><th>Technique</th><th>Cost driver</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>Network graph</td><td>stroked paths</td><td>edge count</td><td>degrades to matrix &mdash; see below</td></tr>
+        <tr><td>Decision field</td><td><code>ImageData</code> blit, smoothing off, scaled up</td><td>forward passes</td><td>computed in the worker, 64&sup2; live</td></tr>
+        <tr><td>Loss / accuracy chart</td><td>paths + band fill</td><td>point count</td><td>min/mean/max band, not a sampled line</td></tr>
+        <tr><td>SOM lattice</td><td>filled cells or node glyphs</td><td>node count</td><td>cell fill only when dim = 3</td></tr>
+        <tr><td>U-matrix</td><td><code>ImageData</code> blit</td><td>node count</td><td>same code path as the decision field</td></tr>
+        <tr><td>Component planes</td><td><code>ImageData</code>, one per dim</td><td>dim &times; nodes</td><td>capped at 12 planes, paged after</td></tr>
+        <tr><td>Weight matrices</td><td><code>ImageData</code>, one per layer</td><td>parameter count</td><td>the graph's replacement at scale</td></tr>
+        <tr><td>Histograms</td><td>rects</td><td>bin count</td><td>fixed 32 bins, shared axis</td></tr>
+        <tr><td>Gradient flow</td><td>rects</td><td>layer count</td><td>log scale, and it says so</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Known limit, with a trigger</span>
+      <p><strong>The network graph stops working somewhere near 24 units per layer.</strong>
+      2&ndash;16&ndash;16&ndash;2 is 320 edges and draws in well under a millisecond.
+      2&ndash;64&ndash;64&ndash;2 is 4&nbsp;352, and 64&ndash;128&ndash;128&ndash;10 is 25&nbsp;856 —
+      at which point it is not slow so much as <em>meaningless</em>, a grey rectangle of overlapping
+      hairlines.</p>
+      <p>So the graph has a stated limit rather than a hope. Above 24 units in any layer the centre
+      panel switches to <strong>weight matrices as heatmaps</strong>, which is <code>O(pixels)</code>
+      instead of <code>O(edges)</code> and stays readable at any size. The switch is announced in the
+      panel header, not silent, and it can be overridden with edge culling by
+      <code>|w|</code> percentile — with the culling threshold printed, because a graph that
+      quietly hides half its edges is worse than one that admits it.</p>
+    </div>
+
+    <h3>The 3D views, and the rule they live under</h3>
+    <p>A <code>2D / 3D</code> toggle in the toolbar, or <code>2</code> and <code>3</code>. Two
+    scenes, one per network, both dynamically imported.</p>
+
+    <ul class="list">
+      <li><strong>MLP &mdash; the loss surface.</strong> A height field of the loss over two
+      directions in weight space, with the optimiser's actual path traced across it and the current
+      position marked. The obvious implementation — pick two named weights and vary them — produces
+      a boring bowl, because two weights out of 354 barely move the loss. The one that produces the
+      famous pictures is <strong>two random directions, filter-normalised</strong> (Li et al., 2018):
+      draw two random vectors in full weight space, rescale each layer's slice to match the norm of
+      the corresponding slice of the real weights, and evaluate on that plane. A dropdown offers
+      both, with the named-weights mode labelled <em>literal</em> and the random mode
+      labelled <em>representative</em>, because the difference between them is itself the lesson.</li>
+      <li><strong>SOM &mdash; the lattice folding.</strong> Nodes drawn at their weight vectors in
+      input space, connected by their lattice edges, floating in the data cloud. For dim 3 this is
+      exact. Above 3 it is a projection, and the projection is named on screen — PCA on the data,
+      not on the weights, so the view does not change as the map moves. Watching a flat sheet fold
+      itself through a data cloud is the best thirty seconds in the whole project.</li>
+    </ul>
+
+    <div class="pick"><strong>3D is a view, never the simulation.</strong> The maths is identical in
+    both; the drawing is all that changes. 2D stays the default and the teaching surface, and no
+    feature may exist in 3D that the 2D view lacks. Evolab learned this the expensive way — its 3D
+    replay of a 2D physics engine had to have three sections of its design document amended — and
+    the rule is inherited rather than rediscovered.</p></div>
+  </div>
+</section>
+
+<!-- ==================== 8 ==================== -->
+<section id="ui">
+  <div class="sechead"><p class="eyebrow">08</p><h2>The screens</h2></div>
+  <div class="col stack">
+    <p>One chassis, borrowed intact from Evolab: a 42&nbsp;px toolbar, a left column of controls, a
+    centre stage, a right column of instruments, and full-screen overlays for the stepper and help.
+    The two networks are a segmented control in the toolbar, not two applications — the shell, the
+    stage machinery, the chart, the scrubber and the stepper are shared, and only the panels change.</p>
+  </div>
+
+  <figure style="margin-top:26px">
+    <div class="mock">
+      <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>
+        <span class="path">neurallab.local &mdash; explorer &middot; perceptron</span></div>
+      <div class="scrollx"><div class="app" id="mk-mlp"></div></div>
+    </div>
+    <figcaption><b>Fig 8.1</b> The perceptron workbench &mdash; Explorer stage, mid-run on two moons.</figcaption>
+    <div class="notes">
+      <div><span>1</span>Network switch. Perceptron is violet, Kohonen cyan; the accent follows the choice through every panel.</div>
+      <div><span>2</span>Architecture as a list, not a form. Clicking a layer selects it; the centre graph highlights that layer's edges.</div>
+      <div><span>3</span>Live activations fill the nodes; edge colour is the signed weight, width is <code>|w|</code>. This is the network, drawn from the buffers the worker last posted.</div>
+      <div><span>4</span>Decision field at 64&sup2; while running, redrawn at 128&sup2; on pause. The resolution is printed so the change is explained.</div>
+      <div><span>5</span>Loss as a min/mean/max band, because minibatch loss is noisy and a sampled line would invent smoothness.</div>
+      <div><span>6</span>Validation crossing above training is the whole of challenge 7, so it gets a colour and a threshold, not just a line.</div>
+      <div><span>7</span>Gradient norm per layer, log scale. Challenge 6 is watching the left-hand bars go dark.</div>
+      <div><span>8</span>Epoch scrubber. Every 20th report keeps a weight snapshot, so the run can be replayed backwards.</div>
+    </div>
+  </figure>
+
+  <figure style="margin-top:44px">
+    <div class="mock">
+      <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>
+        <span class="path">neurallab.local &mdash; stepper &middot; backpropagation</span></div>
+      <div class="scrollx"><div class="app" id="mk-step"></div></div>
+    </div>
+    <figcaption><b>Fig 8.2</b> The stepper &mdash; backpropagation paused between operators, on one real sample.</figcaption>
+    <div class="notes">
+      <div><span>1</span>Stage list. Forward and backward are expanded per layer, so "the error travels backwards" is seven clicks rather than one animation.</div>
+      <div><span>2</span>Every number here came from <code>trainStep(&hellip;, {trace:true})</code> &mdash; the function the worker drains at full speed.</div>
+      <div><span>3</span>&delta; arriving, the local derivative, &delta; leaving. Cyan is negative, amber positive, and the strip is the actual vector.</div>
+      <div><span>4</span>&Delta;w for the selected layer, with the learning rate already applied. The largest single update is called out by name.</div>
+      <div><span>5</span>The explanation is written against these values, not around them &mdash; it names the unit and quotes the number.</div>
+      <div><span>6</span><kbd>&rarr;</kbd> advances one operator, not one step. Reaching the end of <em>update</em> is what advances the step counter.</div>
+    </div>
+  </figure>
+
+  <figure style="margin-top:44px">
+    <div class="mock">
+      <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>
+        <span class="path">neurallab.local &mdash; explorer &middot; kohonen</span></div>
+      <div class="scrollx"><div class="app" id="mk-som"></div></div>
+    </div>
+    <figcaption><b>Fig 8.3</b> The Kohonen workbench &mdash; a 12&times;12 map, 6&nbsp;800 samples in, on the colour cube.</figcaption>
+    <div class="notes">
+      <div><span>1</span>The schedule is drawn, not just typed. &alpha; and &sigma; over the run, with <em>now</em> marked &mdash; challenge 10 is a shape you can see going wrong.</div>
+      <div><span>2</span>The lattice, with each node filled by its own weight vector. For the colour cube that is literal; for anything else the panel says which projection it is using.</div>
+      <div><span>3</span>The winning node for the last sample drawn, ringed in amber, with its neighbourhood shaded by <code>h(d,t)</code>.</div>
+      <div><span>4</span>U-matrix. Bright ridges are gaps in the data &mdash; cluster boundaries nobody labelled. This is the panel challenge 11 exists for.</div>
+      <div><span>5</span>Quantisation error is the SOM's loss curve. Topographic error is the one that catches a twisted map, and it is charted beside it for exactly that reason.</div>
+      <div><span>6</span>Component planes: one heatmap per input dimension. How a 13-dimensional map becomes readable.</div>
+      <div><span>7</span>Hit counts. A large empty region means the map has spent nodes on space the data does not occupy.</div>
+    </div>
+  </figure>
+
+  <figure style="margin-top:44px">
+    <div class="mock">
+      <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>
+        <span class="path">neurallab.local &mdash; 3d view</span></div>
+      <div class="scrollx"><div class="app" id="mk-3d"></div></div>
+    </div>
+    <figcaption><b>Fig 8.4</b> The 3D views &mdash; loss surface with the optimiser's path, and the lattice folding through its data.</figcaption>
+    <div class="notes">
+      <div><span>1</span>Two random filter-normalised directions, not two named weights. The dropdown offers both and labels the difference <em>representative</em> versus <em>literal</em>.</div>
+      <div><span>2</span>The path is the run that actually happened, replayed from the snapshot ring &mdash; not a re-optimisation.</div>
+      <div><span>3</span>Drag to orbit, wheel to zoom, double-click to reset. Same controls in both scenes.</div>
+      <div><span>4</span>The lattice in input space: nodes at their weight vectors, edges from the lattice. Flat sheet at step 0, folded by step 6000.</div>
+      <div><span>5</span>Above 3 dimensions the projection is named on screen, and it is PCA of the <em>data</em> so the axes do not move while the map does.</div>
+    </div>
+  </figure>
+
+  <figure style="margin-top:44px">
+    <div class="mock">
+      <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>
+        <span class="path">neurallab.local &mdash; guided</span></div>
+      <div class="scrollx"><div class="app" id="mk-guided"></div></div>
+    </div>
+    <figcaption><b>Fig 8.5</b> The guided first run &mdash; four steps, no hyperparameters, about eight seconds.</figcaption>
+    <div class="notes">
+      <div><span>1</span>Four steps, and the later ones are dimmed rather than hidden, so the shape of what is coming is visible.</div>
+      <div><span>2</span>Shapes, not architectures. "Straight line" is a network with no hidden layer; the phrase arrives before the term does.</div>
+      <div><span>3</span>Step 4 is a before-and-after: the network's first guess against its last. Generation zero's boundary is kept for exactly this.</div>
+      <div><span>4</span>The afterword branches on what happened. It quotes the accuracy it actually reached.</div>
+    </div>
+  </figure>
+
+  <figure style="margin-top:44px">
+    <div class="mock">
+      <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>
+        <span class="path">neurallab.local &mdash; lab &middot; architecture</span></div>
+      <div class="scrollx"><div class="app" id="mk-editor"></div></div>
+    </div>
+    <figcaption><b>Fig 8.6</b> The architecture editor &mdash; validation that explains why, not just refuses.</figcaption>
+    <div class="notes">
+      <div><span>1</span>Parameter count updates as you type, next to the sample count. A network with more parameters than samples is the definition of challenge 7.</div>
+      <div><span>2</span>Warnings name the consequence, not the rule. "Sigmoid at depth 6" is a fact; "the input layer will receive almost no gradient" is a prediction the diagnostics panel then confirms.</div>
+      <div><span>3</span>Editing the architecture rebuilds the network and clears the run, and the button says so before it is pressed.</div>
+    </div>
+  </figure>
+
+  <figure style="margin-top:44px">
+    <div class="mock">
+      <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>
+        <span class="path">neurallab.local &mdash; 720 px</span></div>
+      <div class="scrollx"><div class="app" id="mk-narrow"></div></div>
+    </div>
+    <figcaption><b>Fig 8.7</b> The chassis below 1000&nbsp;px &mdash; side panels become overlay drawers, the stage keeps the width.</figcaption>
+    <div class="notes">
+      <div><span>1</span>Same DOM, same ids, same contents. The panels do not know which chassis they are in.</div>
+      <div><span>2</span>Two toolbar buttons open the drawers; the toolbar collapses into a &#8943; menu, and controls are <em>moved</em> into it, never cloned.</div>
+      <div><span>3</span>Full-screen overlays outrank drawers. The stepper and help sit above them, which is a z-index bug Evolab shipped for four slices and this project starts with fixed.</div>
+    </div>
+  </figure>
+
+  <figure style="margin-top:44px">
+    <div class="mock">
+      <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>
+        <span class="path">neurallab.local &mdash; challenge track</span></div>
+      <div class="scrollx"><div class="app" id="mk-track"></div></div>
+    </div>
+    <figcaption><b>Fig 8.8</b> The challenge track &mdash; twelve cards, four phases, nothing locked.</figcaption>
+    <div class="notes">
+      <div><span>1</span>A collapsed card is its title and nothing else. Twelve briefs do not fit; twelve titles do.</div>
+      <div><span>2</span>Cards past the frontier are dimmed as guidance and stay clickable. A completed card is never dimmed.</div>
+      <div><span>3</span>One dot per concept in ladder order &mdash; "what do I understand now", answered without scrolling.</div>
+      <div><span>4</span>The afterword branches on the run's own outcome and quotes its numbers.</div>
+    </div>
+  </figure>
+
+  <div class="col stack" style="margin-top:40px">
+    <h3>Keyboard</h3>
+    <p>One array in <code>ui/keymap.ts</code>: the handler dispatches from it and the help screen
+    renders it, so a shortcut cannot be documented without existing or exist without being
+    documented.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Key</th><th>Does</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Space</kbd></td><td>start or pause training</td></tr>
+        <tr><td><kbd>.</kbd></td><td>one step, while paused</td></tr>
+        <tr><td><kbd>R</kbd></td><td>reinitialise the weights and start over &mdash; same seed unless changed</td></tr>
+        <tr><td><kbd>N</kbd></td><td>switch network: perceptron &harr; kohonen</td></tr>
+        <tr><td><kbd>2</kbd> <kbd>3</kbd></td><td>2D or 3D view</td></tr>
+        <tr><td><kbd>S</kbd></td><td>open the stepper</td></tr>
+        <tr><td><kbd>?</kbd></td><td>open help, from anywhere</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>close whatever is open</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>What lives in the URL</h3>
+    <p>Everything needed to reproduce a screen, and nothing else:
+    <code>?net=mlp&amp;arch=2-16-16-2&amp;act=relu&amp;opt=adam&amp;lr=0.01&amp;data=moons&amp;noise=0.15&amp;seed=4417&amp;step=1200</code>.
+    Weights are not in the URL — they are recomputed, because the run is deterministic in the seed
+    and the step count and 354 floats do not belong in a query string. Progress through the concept
+    ladder is the one piece of state that cannot live there; it goes in
+    <code>localStorage</code>, parsed defensively, because that key is user-writable and outlives
+    the code reading it.</p>
+  </div>
+</section>
+
+<!-- ==================== 9 ==================== -->
+<section id="chassis">
+  <div class="sechead"><p class="eyebrow">09</p><h2>Degrade the chassis, keep the instrument</h2></div>
+  <div class="col stack">
+    <p>A three-column workbench does not fold into a phone, and pretending otherwise produces a
+    stage 64&nbsp;px wide. Two bands, and the arithmetic decides where.</p>
+
+    <div class="tbl"><table>
+      <thead><tr><th>Width</th><th>Chassis</th><th>What goes</th></tr></thead>
+      <tbody>
+        <tr><td>&ge; 1000 px</td><td>three columns: 244 / stage / 320</td><td>nothing</td></tr>
+        <tr><td>&lt; 1000 px</td><td>one column; side panels become overlay drawers the stage runs under</td><td>the keyboard hint strip; toolbar collapses to &#8943;</td></tr>
+        <tr><td>&lt; 600 px</td><td>drawers at 86&nbsp;vw</td><td>component planes and the histogram strip; the decision field and lattice take the full width</td></tr>
+      </tbody>
+    </table></div>
+
+    <p style="margin-top:14px">The two fixed columns are 564&nbsp;px between them, so at 700&nbsp;px
+    the stage would be getting 136&nbsp;px. That is the whole argument for drawers, and it is
+    arithmetic rather than taste.</p>
+
+    <p>What is cut below 600&nbsp;px is chosen by the same judgement Evolab recorded about its phase
+    portrait: <em>the panel that looks most impressive and teaches least is the one to cut when room
+    runs out.</em> Component planes are twelve small heatmaps that need side-by-side comparison to
+    mean anything; at 340&nbsp;px they are decoration.</p>
+
+    <p>Full-screen overlays sit at <code>z-index: 50</code>, drawers at 30, the scrim at 20.
+    Anything covering the whole app must outrank anything covering part of it — Evolab shipped that
+    backwards for four slices, and this project inherits the fix rather than the bug.</p>
+  </div>
+</section>
+
+<!-- ==================== 10 ==================== -->
+<section id="server">
+  <div class="sechead"><p class="eyebrow">10</p><h2>The server, and the rule it lives under</h2></div>
+  <div class="col stack">
+    <p>One ASP.NET Core project serving the built SPA at one origin, storing runs in SQLite. It
+    arrives at slice&nbsp;15 and not before, because it is the familiar comfortable part and it
+    would otherwise serve a client that does not exist.</p>
+
+    <div class="pick"><strong>The app works with no server at all, and that is measured, not
+    asserted.</strong> Kill the server mid-session: training continues, no dialog appears, no
+    unhandled rejection is logged, and one amber dot appears in the toolbar. <code>npm run dev</code>
+    and <code>npm test</code> need no .NET; <code>dotnet test</code> needs no Node.</p></div>
+
+    <p>The client wrapper <strong>never throws</strong>, so there is no <code>try</code>/<code>catch</code>
+    anywhere else in the app. Offline, timeout, 404, 500, an HTML error page from a proxy, and a
+    200 with unparseable JSON all become one <code>ApiResult</code> union. Five-second
+    <code>AbortController</code> on every request, because a hanging one gives neither an error to
+    report nor a result to use.</p>
+
+    <div class="tbl"><table>
+      <thead><tr><th>Endpoint</th><th>Does</th><th>Payload</th></tr></thead>
+      <tbody>
+        <tr><td>POST /api/runs</td><td>save a run</td><td>config + final metrics + seed. <strong>No weights.</strong></td></tr>
+        <tr><td>GET /api/runs</td><td>list mine</td><td>title, network, dataset, final loss, when</td></tr>
+        <tr><td>GET /api/runs/{id}</td><td>reopen</td><td>the config; weights are recomputed</td></tr>
+        <tr><td>POST /api/runs/{id}/share</td><td>read-only token</td><td><code>?shared=&lt;token&gt;</code></td></tr>
+      </tbody>
+    </table></div>
+
+    <p style="margin-top:14px">Nothing is uploaded because nothing needs to be: a run is deterministic
+    in its seed, architecture, dataset and step count, so reopening one re-trains it. A 400-step run
+    on two moons is roughly 40&nbsp;ms of arithmetic — cheaper than the round trip that would fetch
+    the weights instead. Two conditions make that true and both are already invariants: the seeded
+    RNG, and the fixed step granularity.</p>
+
+    <div class="risk"><span class="lbl">Recorded in advance</span>
+      <p>Determinism is engine-scoped (§4). A run saved in Chrome and reopened in Firefox will
+      reproduce to about five significant figures, not exactly. <strong>So the stored final loss is
+      compared on reopen at a stated tolerance and a mismatch is reported as a note, not an
+      error</strong> — and the note names no cause, because a lossy record and an engine difference
+      are equally likely and the app cannot tell them apart.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== 11 ==================== -->
+<section id="slices">
+  <div class="sechead"><p class="eyebrow">11</p><h2>Seventeen slices</h2></div>
+  <div class="col stack">
+    <p>Each slice ends with something you can open in a browser and show somebody. No slice is
+    "infrastructure". The observable result goes in the commit message, and from slice 2 that
+    result is a number.</p>
+  </div>
+
+  <div class="tbl" style="margin-top:20px"><table>
+    <thead><tr><th>#</th><th>Slice</th><th>Ends with</th><th>New</th></tr></thead>
+    <tbody>
+      <tr><td class="num">0</td><td>Chassis</td><td>the three-column shell, dark, with a dataset scatter in the stage and nothing learning</td><td><code>core</code>, <code>Rng</code> + golden vector, <code>Dataset</code></td></tr>
+      <tr><td class="num">1</td><td>Forward, drawn</td><td>a network you set by hand, activations lighting up as you drag a sample around</td><td><code>mlp</code> forward, network graph</td></tr>
+      <tr><td class="num">2</td><td>It learns</td><td>XOR solved on screen in about a second</td><td>backward, SGD, loss chart, <strong>gradcheck + golden</strong></td></tr>
+      <tr><td class="num">3</td><td>Data and boundaries</td><td>six datasets, the decision field, train/val split</td><td><code>data</code>, <code>ImageData</code> blit</td></tr>
+      <tr><td class="num">4</td><td>Off the main thread</td><td>4000 steps/s with a smooth 60&nbsp;fps chart; pause, step, throughput readout</td><td>worker, protocol, throttled reports</td></tr>
+      <tr><td class="num">5</td><td><strong>The stepper</strong></td><td>backprop paused between operators on one real sample</td><td><code>trace:true</code>, identity test</td></tr>
+      <tr><td class="num">6</td><td>Guided first run</td><td>four steps, no hyperparameters, first-guess vs last</td><td>stages, presets, branching afterwords</td></tr>
+      <tr><td class="num">7</td><td>Diagnostics</td><td>gradient flow, activation and weight histograms, dead-unit count; Adam and momentum</td><td>optimisers, <code>Diagnostics</code></td></tr>
+      <tr><td class="num">8</td><td>Architecture editor</td><td>add and remove layers live, with validation that explains why</td><td>editor panel, param budget</td></tr>
+      <tr><td class="num">9</td><td><strong>Kohonen kernel</strong></td><td>a 12&times;12 map ordering itself on the colour cube</td><td><code>som</code>, lattice, hits, <strong>golden QE</strong></td></tr>
+      <tr><td class="num">10</td><td>Reading a map</td><td>U-matrix, component planes, labels, QE and TE charted together</td><td>the SOM instrument column</td></tr>
+      <tr><td class="num">11</td><td>The SOM stepper</td><td>BMU and neighbourhood, lattice and input space side by side</td><td>SOM trace, input-space view</td></tr>
+      <tr><td class="num">12</td><td><strong>3D</strong></td><td>a loss surface you can orbit, and a lattice folding through its data</td><td>Three.js chunk, filter-normalised directions</td></tr>
+      <tr><td class="num">13</td><td>Challenge track</td><td>twelve cards, four phases, concept dots</td><td>challenge data, progress in <code>localStorage</code></td></tr>
+      <tr><td class="num">14</td><td>Help</td><td>full-screen reference generated from the app's own data</td><td>help content, per-panel <code>?</code></td></tr>
+      <tr><td class="num">15</td><td>The server</td><td>save, list, reopen, share &mdash; and it all still works unplugged</td><td>ASP.NET Core, SQLite, <code>api.ts</code></td></tr>
+      <tr><td class="num">16</td><td>Model scorecard</td><td>a trained network across five held-out seeds, with a badge it can fail to earn</td><td>digits blob, confusion matrix, task suite</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="col stack" style="margin-top:24px">
+    <h3>Why the order is this order</h3>
+    <ul class="list">
+      <li><strong>Slice 1 has no learning in it at all.</strong> Drawing the network and watching
+      activations move is worth a slice on its own, and it means slice 2 debugs backprop against a
+      forward pass already known to be right.</li>
+      <li><strong>The stepper is slice 5, not slice 12.</strong> It is the point of the project, and
+      it needs to exist before six more panels are built on assumptions it would have corrected.
+      It also forces the trace machinery into the kernel early, when moving it is still cheap.</li>
+      <li><strong>The SOM starts at slice 9, after the MLP is complete through diagnostics.</strong>
+      Both halves share the chassis, the chart, the worker protocol and the stepper frame. Building
+      the second network second means the shared parts are shaped by one real client before they
+      acquire a second, rather than being designed for two hypothetical ones.</li>
+      <li><strong>3D is slice 12, after both networks work.</strong> It is a view. If it arrived
+      earlier it would grow features, and §7's rule would already be broken.</li>
+    </ul>
+
+    <h3>Two commands</h3>
+<pre>npm run dev          <i># http://localhost:5173</i>
+npm test             <i># unit tests — run before every commit</i>
+npm run check        <i># typecheck everything</i>
+npm run train        <i># headless MLP: 400 steps, prints the golden loss</i>
+npm run som          <i># headless SOM: 6000 steps, prints QE, TE and an ASCII U-matrix</i></pre>
+
+    <p>The two headless scripts exist because invariant 4 makes them possible, and because
+    verifying an algorithm without a browser is much faster than verifying it with one. They also
+    assert that the same seed replays identically — the first and smallest form of the golden test.
+    They run under <code>node --experimental-strip-types</code>, which <em>erases</em> types rather
+    than compiling them: no parameter properties, no <code>enum</code>, no namespaces, no
+    decorators. Keeping every file strip-compatible is what avoids a build step for packages.</p>
+  </div>
+</section>
+
+<!-- ==================== 12 ==================== -->
+<section id="stack">
+  <div class="sechead"><p class="eyebrow">12</p><h2>Choices, and the reason for each</h2></div>
+  <div class="col stack">
+    <div class="tbl"><table>
+      <thead><tr><th>Thing</th><th>Choice</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td>Language</td><td>TypeScript strict, <code>noUncheckedIndexedAccess</code></td><td>the compiler is the code reviewer; index arithmetic is everywhere here</td></tr>
+        <tr><td>Build</td><td>Vite, packages aliased as source</td><td>no build step for packages, HMR across the workspace</td></tr>
+        <tr><td>Tests</td><td>Vitest</td><td>same transform as the app, fast enough to run per save</td></tr>
+        <tr><td>3D</td><td>Three.js, dynamic import</td><td>lands in its own chunk; nothing pays for it in 2D</td></tr>
+        <tr><td>Server</td><td>ASP.NET Core + SQLite, slice 15</td><td>one origin, one artefact, one deploy</td></tr>
+        <tr><td>UI</td><td><strong>Plain DOM</strong></td><td>see below</td></tr>
+        <tr><td>Autodiff</td><td><strong>None</strong></td><td>see below</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>No machine-learning library</h3>
+    <p>TensorFlow.js, ONNX Runtime Web and brain.js were all considered, and the decision is not
+    close.</p>
+    <ul class="list">
+      <li><strong>It would hide the artefact.</strong> The backward pass is the thing being taught.
+      A library that computes gradients for you removes precisely the code the reader came to see,
+      and the stepper — the point of the project — would have to reimplement backprop to display
+      it, at which point there are two implementations and one of them is a lie.</li>
+      <li><strong>Pausing between operators is not something a framework offers.</strong>
+      <code>fit()</code> is a black box by design. Getting per-layer &delta; out of a graph executor
+      mid-step means fighting the abstraction the whole way.</li>
+      <li><strong>The size does not need it.</strong> TF.js is roughly 900&nbsp;kB minified with a
+      WebGL backend for networks a thousand times larger than any here. §5's arithmetic puts a
+      training step at 0.1&nbsp;ms in plain scalar JavaScript.</li>
+    </ul>
+    <p>The cost is real and worth naming: convolutions, recurrence, and anything past a few thousand
+    parameters are out of scope permanently. That is the correct trade for this project, and if it
+    ever stops being correct, the honest move is a second project rather than a dependency.</p>
+
+    <h3>No React</h3>
+    <p>Evolab reached slice 16 without it and recorded that as a decision rather than a deferral.
+    The argument is stronger here: the panels that matter are canvases, and a canvas is one
+    <code>useEffect</code> and a ref in React and one function call without it. The DOM that does
+    exist is a few hundred controls-and-readouts that are written once and updated by id.</p>
+    <p>The trigger condition is worth writing down so the decision can be revisited honestly rather
+    than defended: <em>if a panel's DOM ever needs to be reconciled — a list whose items are
+    inserted and removed as data changes, not just retextured — that is the day this gets revisited.</em>
+    The architecture editor in slice 8 is the closest thing to it, and it is a list of at most eight
+    rows that rebuilds wholesale.</p>
+
+    <h3>Deliberately absent</h3>
+    <div class="grid g3" style="max-width:none">
+      <div class="card"><h4>D3</h4><p>Every chart here is a path or an <code>ImageData</code> blit
+      on a canvas. D3's value is data-joined SVG, which is exactly the thing §7 says not to do.</p></div>
+      <div class="card"><h4>A state library</h4><p>One plain object, panels take what they read.
+      There is one writer — the worker's report handler — and one render pass.</p></div>
+      <div class="card"><h4>Comlink</h4><p>Six message types across two unions, and the one thing
+      that needs care is which buffers transfer, which is exactly what an RPC wrapper hides.</p></div>
+    </div>
+
+    <p style="margin-top:6px">This table gets <strong>audited against
+    <code>package.json</code></strong> at every slice. Evolab's equivalent listed five libraries
+    that never arrived, and finding that out at slice 16 is late.</p>
+  </div>
+</section>
+
+<!-- ==================== 13 ==================== -->
+<section id="wrong">
+  <div class="sechead"><p class="eyebrow">13</p><h2>What I expect to go wrong</h2></div>
+  <div class="col stack">
+    <p>Written before the build, so it can be checked against afterwards. Evolab's equivalent
+    section was more useful than its risk register, because it named specific failures rather than
+    categories.</p>
+
+    <ul class="list">
+      <li><strong>A wrong gradient that still trains.</strong> The most likely bug in the project
+      and the hardest to notice, because the loss curve still descends. This is why gradient check
+      is slice 2 and not slice 7, and why it covers every activation rather than one.</li>
+
+      <li><strong>The decision field will fight the training loop.</strong> Both live in one worker
+      and the field costs ninety times a training step. The throttle in §5 is a guess; the number
+      that matters is whether steps/s visibly drops when the field is on, and if it does the field
+      moves to its own worker with a copy of the weights.</li>
+
+      <li><strong>Someone will report the loss differing between browsers as a bug.</strong> §4
+      exists so the answer is one paragraph rather than an afternoon. The golden test's comment says
+      it too, at the place where the number is pinned.</li>
+
+      <li><strong>Adam will be subtly wrong.</strong> The bias-correction terms are easy to
+      misplace and the loss still goes down without them — just more slowly at the start, which
+      looks like a learning-rate issue. Its own test against a hand-computed step, not a
+      convergence check.</li>
+
+      <li><strong>Topographic error will be wrong at the lattice edges.</strong> Corner nodes have
+      three neighbours on a rectangular lattice and the naive implementation assumes four, which
+      biases TE by roughly the perimeter fraction &mdash; about 20% of a 12&times;12 map. The
+      neighbour table is built once, per topology, and tested against a hand-counted 3&times;3.</li>
+
+      <li><strong>The network graph will look worse than the screenshots in my head.</strong> 320
+      overlapping translucent lines is a lot of ink. The mitigation is in §7 and it has a stated
+      trigger; the risk is that the trigger turns out to be 12 units rather than 24, in which case
+      the matrix view is the primary and the graph is the toy.</li>
+
+      <li><strong>The SOM will look finished before it is.</strong> A colour-cube map orders itself
+      beautifully in a few thousand steps and looks like a working implementation with the
+      neighbourhood function subtly wrong. The colour cube is a demo, not a test; the golden QE
+      number and the hand-counted 3&times;3 neighbour table are the tests.</li>
+
+      <li><strong>Scope will drift toward a second MLP feature instead of the SOM.</strong>
+      Convolutions, dropout, batch norm and learning-rate schedules are all one afternoon each and
+      all more familiar than Kohonen maps. The slice order is the defence, and slice 9 is the line.</li>
+    </ul>
+
+    <h3>Open questions</h3>
+    <ul class="list">
+      <li><strong>Hex topology, or rectangular only?</strong> Hex is the better lattice and the
+      standard in the literature, and it costs a different neighbour table plus an offset row in
+      every drawing routine. Currently specified as an option; if slice 9 runs long it becomes
+      rectangular-only and hex is a later slice.</li>
+      <li><strong>Does the guided flow cover both networks, or only the MLP?</strong> Two guided
+      flows is two sets of copy to keep true. The current answer is one flow, on the MLP, with the
+      SOM reached through challenge&nbsp;9 — but a reader who came for Kohonen maps will find that
+      annoying, and the honest test is to watch one.</li>
+      <li><strong>Is the epoch scrubber worth its snapshot ring?</strong> Keeping weights every 20th
+      report at 106&nbsp;kB a snapshot is 5&nbsp;MB for a long run on the largest network. Probably
+      fine, probably needs a cap, and the cap should be stated in steps rather than megabytes so a
+      reader can understand what they lose.</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+</div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var AM="#E9A13B", CY="#4EA8C4", VI="#8B7BD8", OK="#4FB48C", BAD="#D9625C",
+    TX="#E4E2EC", DIM="#8C8899", FAINT="#5C5871", LINE="#2C2A3A", PNL="#16151F", BG="#0E0D15";
+
+/* Seeded RNG — the mockups are deterministic, which is the same promise the app makes. */
+function rng(s){ return function(){ s|=0; s=s+0x6D2B79F5|0;
+  var t=Math.imul(s^s>>>15,1|s); t=t+Math.imul(t^t>>>7,61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296; }; }
+
+/* Diverging ramp: cyan (negative) -> panel (zero) -> amber (positive). */
+function wcol(v){
+  var t=Math.max(-1,Math.min(1,v));
+  var a=Math.abs(t);
+  if(t<0) return "rgba(78,168,196,"+(0.10+a*0.85).toFixed(3)+")";
+  return "rgba(233,161,59,"+(0.10+a*0.85).toFixed(3)+")";
+}
+/* Monotone-luminance ramp for unsigned magnitudes — indigo -> cyan -> amber. */
+function hcol(t){
+  t=Math.max(0,Math.min(1,t));
+  var r,g,b;
+  if(t<0.5){ var u=t/0.5; r=40+u*38; g=38+u*130; b=90+u*106; }
+  else { var v=(t-0.5)/0.5; r=78+v*155; g=168-v*7; b=196-v*137; }
+  return "rgb("+(r|0)+","+(g|0)+","+(b|0)+")";
+}
+function esc(s){ return String(s); }
+
+/* ---------- network graph ---------- */
+function graph(shape, seed, opt){
+  opt=opt||{};
+  var R=rng(seed), W=640, H=286, pad=44;
+  var xs=[], i, l, n;
+  for(l=0;l<shape.length;l++) xs.push(pad + l*(W-pad*2)/(shape.length-1));
+  var ys=[];
+  for(l=0;l<shape.length;l++){
+    n=shape[l]; var col=[], gap=Math.min(30, (H-40)/Math.max(1,n));
+    for(i=0;i<n;i++) col.push(H/2 + (i-(n-1)/2)*gap);
+    ys.push(col);
+  }
+  var act=[]; for(l=0;l<shape.length;l++){ var a=[]; for(i=0;i<shape[l];i++) a.push(R()); act.push(a); }
+
+  var s='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">';
+  /* edges first, so nodes sit on top */
+  for(l=0;l<shape.length-1;l++){
+    for(i=0;i<shape[l];i++) for(var j=0;j<shape[l+1];j++){
+      var w=(R()*2-1);
+      var hi = opt.hl===l ? 1 : 0;
+      var sw=(0.4+Math.abs(w)*1.5)*(hi?1.35:1);
+      s+='<line x1="'+xs[l].toFixed(1)+'" y1="'+ys[l][i].toFixed(1)+'" x2="'+xs[l+1].toFixed(1)+
+         '" y2="'+ys[l+1][j].toFixed(1)+'" stroke="'+wcol(w*(hi?1:0.62))+'" stroke-width="'+sw.toFixed(2)+'"/>';
+    }
+  }
+  for(l=0;l<shape.length;l++){
+    for(i=0;i<shape[l];i++){
+      var v=act[l][i], r=l===0||l===shape.length-1?8:7;
+      s+='<circle cx="'+xs[l].toFixed(1)+'" cy="'+ys[l][i].toFixed(1)+'" r="'+r+
+         '" fill="'+hcol(v*0.9)+'" stroke="'+(v>0.72?AM:LINE)+'" stroke-width="'+(v>0.72?1.6:1)+'"/>';
+    }
+  }
+  var lbl=["input","hidden 1","hidden 2","output"];
+  for(l=0;l<shape.length;l++)
+    s+='<text x="'+xs[l].toFixed(1)+'" y="'+(H-8)+'" fill="'+FAINT+
+       '" font-family="monospace" font-size="9" letter-spacing="1.1" text-anchor="middle">'+
+       (lbl[l]||("layer "+l)).toUpperCase()+' '+shape[l]+'</text>';
+  return s+'</svg>';
+}
+
+/* ---------- decision field + samples ---------- */
+function field(seed, res, twist){
+  var R=rng(seed), N=res, W=440, H=190, s='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">';
+  var cw=W/N, ch=H/N, i,j;
+  for(j=0;j<N;j++) for(i=0;i<N;i++){
+    var x=(i+0.5)/N*2-1, y=(j+0.5)/N*2-1;
+    /* a moons-ish boundary, purely decorative but smooth and asymmetric */
+    var d=Math.sin(x*2.5+twist)*0.55 + y*1.25 + Math.sin(y*1.7)*0.3;
+    var p=1/(1+Math.exp(-d*3.2));
+    var c = p>0.5 ? "rgba(233,161,59,"+((p-0.5)*1.05).toFixed(3)+")"
+                  : "rgba(78,168,196,"+((0.5-p)*1.05).toFixed(3)+")";
+    s+='<rect x="'+(i*cw).toFixed(2)+'" y="'+(j*ch).toFixed(2)+'" width="'+(cw+0.6).toFixed(2)+
+       '" height="'+(ch+0.6).toFixed(2)+'" fill="'+c+'"/>';
+  }
+  for(var k=0;k<120;k++){
+    var a=R()*Math.PI, rad=0.62+R()*0.16, up=R()<0.5;
+    var px = up ? Math.cos(a)*rad*0.9-0.18 : -Math.cos(a)*rad*0.9+0.18;
+    var py = up ? -Math.sin(a)*rad*0.55+0.16 : Math.sin(a)*rad*0.55-0.16;
+    px+= (R()-0.5)*0.13; py+=(R()-0.5)*0.13;
+    s+='<circle cx="'+((px+1)/2*W).toFixed(1)+'" cy="'+((py+1)/2*H).toFixed(1)+'" r="2.5" fill="'+
+       (up?AM:CY)+'" fill-opacity=".9" stroke="'+BG+'" stroke-width=".8"/>';
+  }
+  return s+'</svg>';
+}
+
+/* ---------- loss chart with a band ---------- */
+function chart(seed, opt){
+  opt=opt||{};
+  var R=rng(seed), N=64, W=300, H=112, i;
+  var tr=[], va=[], lo=[], hi=[], v=1.02, w=1.05;
+  for(i=0;i<N;i++){
+    v = v*0.955 + 0.004 + (R()-0.5)*0.012; if(v<0.03) v=0.03+R()*0.01;
+    w = opt.over && i>N*0.46 ? w*0.995 + (i-N*0.46)*0.0055 : w*0.951 + 0.006 + (R()-0.5)*0.012;
+    tr.push(v); va.push(w); lo.push(Math.max(0.01,v-0.055-R()*0.05)); hi.push(v+0.06+R()*0.06);
+  }
+  var mx=1.25;
+  function X(i){ return (i/(N-1)*W).toFixed(1); }
+  function Y(v){ return (H-6-(v/mx)*(H-16)).toFixed(1); }
+  var band="M"+X(0)+" "+Y(hi[0]);
+  for(i=1;i<N;i++) band+="L"+X(i)+" "+Y(hi[i]);
+  for(i=N-1;i>=0;i--) band+="L"+X(i)+" "+Y(lo[i]);
+  band+="Z";
+  var dT="", dV="";
+  for(i=0;i<N;i++){ dT+=(i?"L":"M")+X(i)+" "+Y(tr[i]); dV+=(i?"L":"M")+X(i)+" "+Y(va[i]); }
+  var s='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:100%">';
+  for(i=1;i<4;i++) s+='<line x1="0" y1="'+(i*H/4).toFixed(0)+'" x2="'+W+'" y2="'+(i*H/4).toFixed(0)+
+    '" stroke="#1F1E2B"/>';
+  s+='<path d="'+band+'" fill="'+AM+'" fill-opacity=".13"/>';
+  s+='<path d="'+dV+'" fill="none" stroke="'+(opt.over?BAD:CY)+'" stroke-width="1.4"'+
+     (opt.over?'':' stroke-dasharray="3 2"')+'/>';
+  s+='<path d="'+dT+'" fill="none" stroke="'+AM+'" stroke-width="2"/>';
+  s+='<circle cx="'+X(N-1)+'" cy="'+Y(tr[N-1])+'" r="3.2" fill="'+AM+'"/>';
+  if(opt.over) s+='<circle cx="'+X(N-1)+'" cy="'+Y(va[N-1])+'" r="3.2" fill="'+BAD+'"/>';
+  return s+'</svg>';
+}
+
+/* ---------- schedule curves ---------- */
+function schedule(){
+  var W=220,H=54,N=48,i,dA="",dS="";
+  for(i=0;i<N;i++){
+    var t=i/(N-1), x=(t*W).toFixed(1);
+    dA+=(i?"L":"M")+x+" "+(H-4-Math.exp(-t*2.6)*(H-12)).toFixed(1);
+    dS+=(i?"L":"M")+x+" "+(H-4-Math.exp(-t*3.9)*(H-12)).toFixed(1);
+  }
+  return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:54px">'+
+    '<path d="'+dA+'" fill="none" stroke="'+AM+'" stroke-width="1.6"/>'+
+    '<path d="'+dS+'" fill="none" stroke="'+CY+'" stroke-width="1.6" stroke-dasharray="3 2"/>'+
+    '<line x1="'+(W*0.57).toFixed(0)+'" y1="0" x2="'+(W*0.57).toFixed(0)+'" y2="'+H+
+    '" stroke="'+FAINT+'" stroke-dasharray="2 3"/></svg>';
+}
+
+/* ---------- SOM lattice ---------- */
+function hsv(h,s,v){
+  h=(h%1+1)%1; var i=Math.floor(h*6), f=h*6-i,
+      p=v*(1-s), q=v*(1-f*s), t=v*(1-(1-f)*s), r,g,b;
+  switch(i%6){
+    case 0: r=v;g=t;b=p; break; case 1: r=q;g=v;b=p; break; case 2: r=p;g=v;b=t; break;
+    case 3: r=p;g=q;b=v; break; case 4: r=t;g=p;b=v; break; default: r=v;g=p;b=q;
+  }
+  return "rgb("+Math.round(r*255)+","+Math.round(g*255)+","+Math.round(b*255)+")";
+}
+function lattice(seed, n, opt){
+  opt=opt||{};
+  var R=rng(seed), S=250, s='<svg viewBox="0 0 '+S+' '+S+'" preserveAspectRatio="xMidYMid meet">';
+  var c=S/n, i,j;
+  /* A smooth field, so neighbouring nodes hold similar colours — that continuity IS the
+     result a SOM produces, so the drawing has to have it or the figure teaches the wrong thing.
+     Swept in HSV rather than RGB: three independent RGB sines all peak together and wash the
+     middle of the map out to white, which is what the first attempt did. */
+  for(j=0;j<n;j++) for(i=0;i<n;i++){
+    var u=i/(n-1), v=j/(n-1);
+    var h=0.02+u*0.66+0.12*Math.sin(v*3.0)+0.05*Math.cos(u*4.1);
+    var sat=0.86-0.42*Math.max(0,Math.min(1,0.5+0.5*Math.sin(v*2.6-1.1)));
+    var val=0.58+0.38*Math.max(0,Math.min(1,0.5+0.5*Math.cos(u*2.4+v*1.7)));
+    s+='<rect x="'+(i*c).toFixed(1)+'" y="'+(j*c).toFixed(1)+'" width="'+(c-1).toFixed(1)+
+       '" height="'+(c-1).toFixed(1)+'" rx="1.5" fill="'+hsv(h,sat,val)+'"/>';
+  }
+  if(opt.bmu){
+    var bi=opt.bmu[0], bj=opt.bmu[1];
+    for(j=0;j<n;j++) for(i=0;i<n;i++){
+      var d=Math.sqrt((i-bi)*(i-bi)+(j-bj)*(j-bj));
+      var h=Math.exp(-(d*d)/(2*2.1*2.1));
+      /* White for the falloff, not amber. The lattice cells are fully saturated in every hue,
+         and an amber ring at 20% over an orange node is invisible while the same ring over a
+         blue one shouts — the marker has to be readable independent of what it sits on. */
+      if(h>0.06 && d>0.4) s+='<rect x="'+(i*c).toFixed(1)+'" y="'+(j*c).toFixed(1)+'" width="'+(c-1).toFixed(1)+
+        '" height="'+(c-1).toFixed(1)+'" rx="1.5" fill="none" stroke="#FFFFFF" stroke-opacity="'+
+        (h*0.9).toFixed(2)+'" stroke-width="1.6"/>';
+    }
+    /* Dark halo under the winner's ring, for the same reason. */
+    s+='<rect x="'+(bi*c-2.5).toFixed(1)+'" y="'+(bj*c-2.5).toFixed(1)+'" width="'+(c+4).toFixed(1)+
+       '" height="'+(c+4).toFixed(1)+'" rx="3" fill="none" stroke="#0E0D15" stroke-width="4.5"/>';
+    s+='<rect x="'+(bi*c-2.5).toFixed(1)+'" y="'+(bj*c-2.5).toFixed(1)+'" width="'+(c+4).toFixed(1)+
+       '" height="'+(c+4).toFixed(1)+'" rx="3" fill="none" stroke="'+AM+'" stroke-width="2.6"/>';
+  }
+  return s+'</svg>';
+}
+
+/* ---------- heat grid (u-matrix, component plane, hit map) ---------- */
+function heat(seed, n, S, mode){
+  var R=rng(seed), s='<svg viewBox="0 0 '+S+' '+S+'" preserveAspectRatio="xMidYMid meet">';
+  var c=S/n,i,j;
+  for(j=0;j<n;j++) for(i=0;i<n;i++){
+    var u=i/(n-1), v=j/(n-1), t;
+    if(mode==="u") t=Math.max(0,Math.min(1, 0.18+0.9*Math.abs(Math.sin(u*3.1)*Math.cos(v*2.4))*Math.abs(Math.sin((u+v)*2.2))+R()*0.08));
+    else if(mode==="hit") t=Math.max(0,Math.min(1, 0.15+0.8*Math.exp(-((u-0.34)*(u-0.34)+(v-0.6)*(v-0.6))*5)+R()*0.1));
+    else t=Math.max(0,Math.min(1, 0.5+0.5*Math.sin(u*2.4+v*1.3+mode*1.9)));
+    s+='<rect x="'+(i*c).toFixed(1)+'" y="'+(j*c).toFixed(1)+'" width="'+(c+0.4).toFixed(1)+
+       '" height="'+(c+0.4).toFixed(1)+'" fill="'+hcol(t)+'"/>';
+  }
+  return s+'</svg>';
+}
+
+/* ---------- signed value strip ---------- */
+function strip(seed, n, scale, h){
+  var R=rng(seed), W=200, s='<svg viewBox="0 0 '+W+' '+(h||20)+'" preserveAspectRatio="none" style="width:100%;height:'+(h||20)+'px">';
+  var c=W/n;
+  for(var i=0;i<n;i++){
+    var v=(R()*2-1)*(scale||1);
+    s+='<rect x="'+(i*c).toFixed(2)+'" y="0" width="'+(c-1).toFixed(2)+'" height="'+(h||20)+
+       '" fill="'+wcol(v)+'"/>';
+  }
+  return s+'</svg>';
+}
+/* ---------- unsigned magnitude strip ---------- */
+function mag(seed, n, h){
+  var R=rng(seed), W=200, s='<svg viewBox="0 0 '+W+' '+(h||20)+'" preserveAspectRatio="none" style="width:100%;height:'+(h||20)+'px">';
+  var c=W/n;
+  for(var i=0;i<n;i++)
+    s+='<rect x="'+(i*c).toFixed(2)+'" y="0" width="'+(c-1).toFixed(2)+'" height="'+(h||20)+
+       '" fill="'+hcol(R()*0.92)+'"/>';
+  return s+'</svg>';
+}
+
+/* ---------- histogram ---------- */
+function hist(seed, tint){
+  var R=rng(seed), W=300, H=56, N=32, s='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:'+H+'px">';
+  var c=W/N;
+  for(var i=0;i<N;i++){
+    var x=(i/(N-1))*2-1, v=Math.exp(-x*x*3.1)*(0.62+R()*0.38);
+    s+='<rect x="'+(i*c).toFixed(2)+'" y="'+((1-v)*(H-4)).toFixed(1)+'" width="'+(c-1).toFixed(2)+
+       '" height="'+(v*(H-4)+4).toFixed(1)+'" fill="'+(tint||CY)+'" fill-opacity="'+(0.35+v*0.5).toFixed(2)+'"/>';
+  }
+  s+='<line x1="'+(W/2)+'" y1="0" x2="'+(W/2)+'" y2="'+H+'" stroke="'+FAINT+'" stroke-dasharray="2 3"/>';
+  return s+'</svg>';
+}
+
+/* ---------- gradient flow bars ---------- */
+function gradbars(vals){
+  var s='<div style="display:flex;flex-direction:column;gap:5px">';
+  var mx=Math.max.apply(null,vals.map(function(v){return v[1];}));
+  for(var i=0;i<vals.length;i++){
+    var w=Math.max(2, Math.log10(vals[i][1]/1e-6+1)/Math.log10(mx/1e-6+1)*100);
+    var dead=vals[i][1]<1e-4;
+    s+='<div style="display:grid;grid-template-columns:56px 1fr 58px;align-items:center;gap:8px">'+
+       '<span class="mono" style="font-size:10px;color:'+DIM+'">'+vals[i][0]+'</span>'+
+       '<span class="gauge" style="height:7px"><i style="width:'+w.toFixed(0)+'%;background:'+
+       (dead?BAD:VI)+'"></i></span>'+
+       '<span class="mono" style="font-size:10px;text-align:right;color:'+(dead?BAD:DIM)+
+       '">'+vals[i][1].toExponential(1).replace("e-","e&minus;")+'</span></div>';
+  }
+  return s+'</div>';
+}
+
+/* ---------- 3D: loss surface ---------- */
+function surface(){
+  var W=420,H=250,s='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">';
+  var N=22,i,j;
+  function f(u,v){ return Math.exp(-(u*u+v*v)*0.9)*1.0 + 0.28*Math.exp(-((u-1.1)*(u-1.1)+(v+0.9)*(v+0.9))*2.4); }
+  function P(u,v){
+    var z=f(u,v);
+    return [ W/2 + (u-v)*62, H*0.68 - (u+v)*24 - z*88 ];
+  }
+  var cells=[];
+  for(j=0;j<N-1;j++) for(i=0;i<N-1;i++){
+    var u0=-1.7+i*3.4/(N-1), v0=-1.7+j*3.4/(N-1),
+        u1=-1.7+(i+1)*3.4/(N-1), v1=-1.7+(j+1)*3.4/(N-1);
+    var a=P(u0,v0),b=P(u1,v0),c=P(u1,v1),d=P(u0,v1);
+    var z=(f(u0,v0)+f(u1,v1))/2;
+    cells.push({z:z, d:(i+j), p:"M"+a[0].toFixed(1)+" "+a[1].toFixed(1)+"L"+b[0].toFixed(1)+" "+b[1].toFixed(1)+
+      "L"+c[0].toFixed(1)+" "+c[1].toFixed(1)+"L"+d[0].toFixed(1)+" "+d[1].toFixed(1)+"Z"});
+  }
+  cells.sort(function(x,y){ return x.d-y.d; });
+  for(i=0;i<cells.length;i++)
+    s+='<path d="'+cells[i].p+'" fill="'+hcol(1-cells[i].z*0.85)+'" fill-opacity=".92" stroke="#0E0D15" stroke-width=".35"/>';
+  /* the optimiser's path, spiralling into the basin */
+  var dp="";
+  for(i=0;i<70;i++){
+    var t=i/69, ang=t*7.4, rad=1.55*(1-t)*(1-t*0.35);
+    var p=P(Math.cos(ang)*rad*1.05, Math.sin(ang)*rad*0.95);
+    dp+=(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1);
+  }
+  s+='<path d="'+dp+'" fill="none" stroke="#0E0D15" stroke-width="4.2" stroke-opacity=".55"/>';
+  s+='<path d="'+dp+'" fill="none" stroke="'+AM+'" stroke-width="2"/>';
+  var last=P(0.03,0.02);
+  s+='<circle cx="'+last[0].toFixed(1)+'" cy="'+last[1].toFixed(1)+'" r="4.5" fill="'+AM+'" stroke="#0E0D15" stroke-width="1.4"/>';
+  return s+'</svg>';
+}
+
+/* ---------- 3D: SOM lattice folding through a data cloud ---------- */
+function folding(){
+  var R=rng(11), W=420,H=250,N=11,s='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">';
+  var pts=[],i,j;
+  function P(u,v){
+    /* a saddle-ish folded sheet in an isometric projection */
+    var x=(u-0.5)*2, y=(v-0.5)*2;
+    var z=Math.sin(x*1.9)*0.42 + Math.cos(y*1.6)*0.34;
+    return [ W/2 + (x-y)*58, H*0.55 - (x+y)*20 - z*54 ];
+  }
+  for(j=0;j<N;j++){ var row=[]; for(i=0;i<N;i++) row.push(P(i/(N-1), j/(N-1))); pts.push(row); }
+  /* data cloud behind */
+  for(i=0;i<150;i++){
+    var u=R(), v=R(), p=P(u,v);
+    p[0]+=(R()-0.5)*26; p[1]+=(R()-0.5)*20;
+    s+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="1.9" fill="'+CY+'" fill-opacity=".3"/>';
+  }
+  for(j=0;j<N;j++) for(i=0;i<N;i++){
+    if(i<N-1) s+='<line x1="'+pts[j][i][0].toFixed(1)+'" y1="'+pts[j][i][1].toFixed(1)+'" x2="'+
+      pts[j][i+1][0].toFixed(1)+'" y2="'+pts[j][i+1][1].toFixed(1)+'" stroke="'+AM+'" stroke-opacity=".5" stroke-width="1"/>';
+    if(j<N-1) s+='<line x1="'+pts[j][i][0].toFixed(1)+'" y1="'+pts[j][i][1].toFixed(1)+'" x2="'+
+      pts[j+1][i][0].toFixed(1)+'" y2="'+pts[j+1][i][1].toFixed(1)+'" stroke="'+AM+'" stroke-opacity=".5" stroke-width="1"/>';
+  }
+  for(j=0;j<N;j++) for(i=0;i<N;i++)
+    s+='<circle cx="'+pts[j][i][0].toFixed(1)+'" cy="'+pts[j][i][1].toFixed(1)+'" r="2.6" fill="'+AM+
+       '" stroke="#0E0D15" stroke-width=".8"/>';
+  return s+'</svg>';
+}
+
+function set(id, css, html){
+  var el=document.getElementById(id); if(!el) return;
+  el.style.cssText += css;
+  el.innerHTML = html;
+}
+
+/* helpers for repeated panel bits */
+function sl(label, pct, val, cls){
+  return '<div class="fld"><label>'+label+'</label><span class="slider"><i style="width:'+pct+'%"></i>'+
+    '<b style="left:'+pct+'%"></b></span><span class="in'+(cls?" "+cls:"")+'">'+val+'</span></div>';
+}
+function kv(k,v,cls){ return '<div class="kv"><span>'+k+'</span><b'+(cls?' class="'+cls+'"':'')+'>'+v+'</b></div>'; }
+
+/* ============ Fig 8.1 — perceptron workbench ============ */
+set("mk-mlp",
+  "grid-template-columns:244px minmax(0,1fr) 320px;grid-template-rows:42px minmax(0,1fr) 34px;height:632px",
+
+  '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
+    '<span class="seg vi"><span class="on">Perceptron</span><span>Kohonen</span></span>'+
+    '<span class="seg"><span>Guided</span><span class="on">Explorer</span><span>Lab</span></span>'+
+    '<button class="btn pri">Pause</button><button class="btn">Reset</button>'+
+    '<span class="seg"><span class="on">2D</span><span>3D</span></span>'+
+    '<button class="btn">Challenges</button>'+
+    '<button class="btn">Show me how this works &rarr;</button>'+
+    '<span class="sp"></span><span class="mono" style="font-size:10.5px;color:'+FAINT+'">space pause &middot; . step &middot; ? help</span></div>'+
+
+  /* ---- left ---- */
+  '<div class="pnl l">'+
+    '<div class="ph">Network<span class="sp"></span><em>354 params</em><u>?</u></div>'+
+    '<div class="pb">'+
+      '<div class="tree">'+
+        '<div><s></s>input<u>2</u></div>'+
+        '<div class="on"><s></s>dense &middot; relu<u>16</u></div>'+
+        '<div><s></s>dense &middot; relu<u>16</u></div>'+
+        '<div><s></s>output &middot; softmax<u>2</u></div>'+
+      '</div>'+
+      '<button class="btn gh" style="width:100%;text-align:left">+ add layer</button>'+
+    '</div>'+
+    '<div class="ph">Training</div>'+
+    '<div class="pb">'+
+      '<div class="fld"><label>optimiser</label><span class="seg" style="flex:1.4"><span>SGD</span><span>Mom</span><span class="on">Adam</span></span></div>'+
+      sl("learning rate", 42, "0.0100", "am")+
+      sl("batch size", 34, "16")+
+      sl("weight decay", 12, "1e&minus;4")+
+      '<div class="divide"></div>'+
+      '<div class="sl-head">data</div>'+
+      '<div class="fld"><label>set</label><span class="seg" style="flex:1.4"><span class="on">Moons</span><span>Spiral</span><span>XOR</span></span></div>'+
+      sl("noise", 30, "0.15")+
+      sl("train / val", 70, "70 / 30")+
+      '<div class="kv" style="margin-top:2px"><span>samples</span><b>240 &middot; 168 train</b></div>'+
+    '</div>'+
+  '</div>'+
+
+  /* ---- centre ---- */
+  '<div class="pnl" style="display:flex;flex-direction:column">'+
+    '<div class="ph">The network<span class="sp"></span><em>activations live &middot; layer 1 selected</em><u>?</u></div>'+
+    '<div class="stage" style="flex:1.15;min-height:0">'+graph([2,16,16,2], 7, {hl:0})+
+      '<div class="hud tl"><span class="box"><span class="lb">step</span><span class="vl am">1 240</span></span>'+
+        '<span class="box"><span class="lb">epoch</span><span class="vl">118</span></span>'+
+        '<span class="box"><span class="lb">steps / s</span><span class="vl">3 910</span></span></div>'+
+      '<div class="hud tr"><span class="chip live">training</span></div>'+
+      '<div class="hud bl"><span class="chip">edge = signed weight</span><span class="chip">fill = activation</span>'+
+        '<span class="chip">320 edges</span></div>'+
+    '</div>'+
+    '<div class="ph">Decision boundary<span class="sp"></span><em>64&sup2; while running &middot; 128&sup2; on pause</em><u>?</u></div>'+
+    '<div class="stage" style="flex:.9;min-height:0">'+field(3, 34, 0.4)+
+      '<div class="hud tr"><span class="chip am">acc 0.947</span><span class="chip cy">val 0.921</span></div>'+
+      '<div class="hud bl"><span class="chip">168 train shown &middot; 72 held out</span></div>'+
+    '</div>'+
+  '</div>'+
+
+  /* ---- right ---- */
+  '<div class="pnl r">'+
+    '<div class="ph">Loss<span class="sp"></span><em>step 1 240</em><u>?</u></div>'+
+    '<div style="height:112px;flex:none">'+chart(9,{})+'</div>'+
+    '<div class="legend"><span style="color:'+AM+'">&#9644; train (mean)</span>'+
+      '<span style="color:'+AM+';opacity:.55">&#9645; batch min&ndash;max</span>'+
+      '<span style="color:'+CY+'">&#9647; validation</span></div>'+
+    '<div class="pb" style="gap:4px">'+
+      kv("train loss","0.0841","am")+kv("validation","0.1126","cy")+
+      kv("accuracy","0.947")+kv("val accuracy","0.921")+
+      '<div class="divide"></div>'+
+      kv("weight updates","19 840")+kv("largest |&Delta;w|","3.9e&minus;3")+
+    '</div>'+
+    '<div class="ph">Gradient flow<span class="sp"></span><em>log scale</em><u>?</u></div>'+
+    '<div class="pb">'+gradbars([["layer 1",2.4e-3],["layer 2",7.1e-3],["output",4.2e-2]])+'</div>'+
+    '<div class="ph">Weights &middot; layer 1<span class="sp"></span><em>32 bins</em></div>'+
+    '<div class="pb" style="padding-top:4px">'+hist(21, CY)+
+      '<div class="kv"><span>dead relu units</span><b class="ok">0 of 16</b></div></div>'+
+  '</div>'+
+
+  /* ---- bottom ---- */
+  '<div class="bar"><button class="btn" style="padding:3px 8px">&#9646;&#9646;</button>'+
+    '<span class="mono" style="font-size:10px;color:'+FAINT+'">step</span>'+
+    '<span class="trk"><i style="width:62%"></i><b style="left:62%"></b></span>'+
+    '<span class="mono" style="font-size:11px;color:'+TX+'">1 240 / 2 000</span>'+
+    '<span class="chip">seed 4417</span></div>'
+);
+
+/* ============ Fig 8.2 — the stepper ============ */
+set("mk-step",
+  "grid-template-columns:224px minmax(0,1fr) 306px;grid-template-rows:42px minmax(0,1fr);height:616px",
+
+  '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
+    '<span class="chip vi">backpropagation</span>'+
+    '<span class="mono" style="font-size:11px;color:'+DIM+'">step 431 &middot; sample 12 of 240 &middot; batch 16</span>'+
+    '<span class="sp"></span>'+
+    '<button class="btn">&larr; back</button><button class="btn pri">next &rarr;</button>'+
+    '<button class="btn gh">run to end of step</button><button class="btn gh">close</button></div>'+
+
+  '<div class="pnl l" style="overflow:hidden">'+
+    '<div class="ph">Operators</div>'+
+    '<div style="padding:6px 0">'+
+      '<div class="st-stage done"><b>1 &middot; Take a sample</b><span>x = [0.42, &minus;0.18]</span></div>'+
+      '<div class="st-stage done"><b>2 &middot; Forward &rarr; layer 1</b><span>16 units &middot; relu</span></div>'+
+      '<div class="st-stage done"><b>3 &middot; Forward &rarr; layer 2</b><span>16 units &middot; relu</span></div>'+
+      '<div class="st-stage done"><b>4 &middot; Output and loss</b><span>0.6127 cross-entropy</span></div>'+
+      '<div class="st-stage on"><b>5 &middot; Backward &larr; layer 2</b><span>&delta; in &rarr; &delta; out</span></div>'+
+      '<div class="st-stage"><b>6 &middot; Backward &larr; layer 1</b><span>waiting</span></div>'+
+      '<div class="st-stage"><b>7 &middot; Apply the update</b><span>waiting</span></div>'+
+    '</div>'+
+    '<div class="note" style="margin-top:auto">Every value on this screen came from '+
+      '<em>trainStep(net, batch, {trace:true})</em> &mdash; the same function the worker drains at 3 900 steps a second.</div>'+
+  '</div>'+
+
+  '<div class="pnl" style="overflow:hidden">'+
+    '<div class="ph">Layer 2 &mdash; the error arriving, and what it becomes<span class="sp"></span><em>16 &times; 16 + 16</em></div>'+
+    '<div class="pb" style="gap:9px;padding:12px 14px">'+
+      '<div class="st-sub">what came back from the output</div>'+
+      '<div class="st-row"><span class="st-lb">&delta; in</span>'+strip(31,16,0.9)+'<span class="st-nt">&#8214;&delta;&#8214; 0.214</span></div>'+
+      '<div class="st-sub">the layer&rsquo;s own derivative</div>'+
+      '<div class="st-row"><span class="st-lb">a (forward)</span>'+mag(32,16)+'<span class="st-nt">relu</span></div>'+
+      '<div class="st-row"><span class="st-lb">a&prime; = a &gt; 0</span>'+mag(33,16)+'<span class="st-nt">4 units off</span></div>'+
+      '<div class="st-row"><span class="st-lb">&delta;z = &delta; &odot; a&prime;</span>'+strip(34,16,0.82)+'<span class="st-nt">&#8214;&delta;z&#8214; 0.167</span></div>'+
+      '<div class="st-sub">what this layer sends further back</div>'+
+      '<div class="st-row"><span class="st-lb">&delta; out = W&#7488;&delta;z</span>'+strip(35,16,0.62)+'<span class="st-nt">&#8214;&delta;&#8214; 0.071</span></div>'+
+      '<div class="st-sub">and what it keeps for itself &mdash; &Delta;W, learning rate applied</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(16,1fr);gap:1.5px">'+
+        (function(){ var R=rng(77), s=""; for(var i=0;i<64;i++){ var v=(R()*2-1);
+          s+='<i style="display:block;aspect-ratio:1;border-radius:1px;background:'+wcol(v)+'"></i>'; } return s; })()+
+      '</div>'+
+      '<div class="kv" style="margin-top:2px"><span>largest single update</span>'+
+        '<b class="am">w[7,3] &minus;3.9e&minus;3</b></div>'+
+    '</div>'+
+  '</div>'+
+
+  '<div class="pnl r">'+
+    '<div class="ph">What just happened</div>'+
+    '<div class="pb" style="gap:12px;padding:13px 14px">'+
+      '<p class="prose">The output layer handed back an error vector of magnitude '+
+        '<b>0.214</b>. Layer 2 multiplies it, element by element, by its own derivative.</p>'+
+      '<p class="prose dim">For a relu that derivative is 1 where the unit fired and 0 where it did not &mdash; '+
+        'so <b>4 of these 16 units</b> pass nothing back at all. Their weights will not change on this sample.</p>'+
+      '<p class="prose dim">What leaves for layer 1 is smaller again: <b>0.071</b>, about a third of what arrived. '+
+        'Do that six more times and there is nothing left. That is challenge 6.</p>'+
+      '<div class="divide"></div>'+
+      '<div class="st-sub" style="margin-top:0">the numbers</div>'+
+      kv("&#8214;&delta;&#8214; in","0.2140")+kv("&#8214;&delta;&#8214; out","0.0713","am")+
+      kv("ratio","0.333","bad")+kv("units passing gradient","12 of 16")+
+      kv("learning rate","0.0100")+
+      '<div class="divide"></div>'+
+      '<p class="prose dim" style="font-size:12px">Press <b>&rarr;</b> to advance one operator. '+
+        'Reaching the end of <em>apply the update</em> is what moves the step counter.</p>'+
+    '</div>'+
+  '</div>'
+);
+
+/* ============ Fig 8.3 — Kohonen workbench ============ */
+set("mk-som",
+  "grid-template-columns:244px minmax(0,1fr) 320px;grid-template-rows:42px minmax(0,1fr) 34px;height:768px",
+
+  '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
+    '<span class="seg cy"><span>Perceptron</span><span class="on">Kohonen</span></span>'+
+    '<span class="seg"><span>Guided</span><span class="on">Explorer</span><span>Lab</span></span>'+
+    '<button class="btn pri">Pause</button><button class="btn">Reset</button>'+
+    '<span class="seg"><span class="on">2D</span><span>3D</span></span>'+
+    '<button class="btn">Challenges</button>'+
+    '<button class="btn">Show me how this works &rarr;</button>'+
+    '<span class="sp"></span><span class="mono" style="font-size:10.5px;color:'+FAINT+'">n switch network</span></div>'+
+
+  '<div class="pnl l">'+
+    '<div class="ph">Map<span class="sp"></span><em>144 nodes</em><u>?</u></div>'+
+    '<div class="pb">'+
+      '<div class="fld"><label>lattice</label><span class="in">12 &times; 12</span></div>'+
+      '<div class="fld"><label>topology</label><span class="seg" style="flex:1.2"><span class="on">Rect</span><span>Hex</span></span></div>'+
+      '<div class="fld"><label>init</label><span class="seg" style="flex:1.2"><span class="on">Random</span><span>PCA</span></span></div>'+
+    '</div>'+
+    '<div class="ph">Schedule<span class="sp"></span><em>over 12 000</em><u>?</u></div>'+
+    '<div class="pb">'+
+      sl("&alpha;&#8320; learning rate", 50, "0.500", "am")+
+      sl("&sigma;&#8320; neighbourhood", 58, "6.00")+
+      '<div class="fld"><label>decay</label><span class="seg" style="flex:1.2"><span class="on">Exp</span><span>Linear</span><span>1/t</span></span></div>'+
+      schedule()+
+      '<div class="legend" style="border:0;padding:2px 0">'+
+        '<span style="color:'+AM+'">&#9644; &alpha;(t) = 0.093</span>'+
+        '<span style="color:'+CY+'">&#9647; &sigma;(t) = 2.11</span></div>'+
+      '<div class="divide"></div>'+
+      '<div class="sl-head">data</div>'+
+      '<div class="fld"><label>set</label><span class="seg" style="flex:1.5"><span class="on">Colours</span><span>Iris</span><span>Animals</span></span></div>'+
+      '<div class="kv"><span>samples</span><b>1 500 &middot; dim 3</b></div>'+
+    '</div>'+
+  '</div>'+
+
+  '<div class="pnl" style="display:flex;flex-direction:column">'+
+    '<div class="ph">The lattice<span class="sp"></span><em>each node drawn as its own weight vector</em><u>?</u></div>'+
+    '<div class="stage" style="flex:1.35;min-height:0;display:flex;align-items:center;justify-content:center;padding:10px">'+
+      '<div style="display:flex;gap:16px;align-items:center;height:100%">'+
+        '<div style="height:100%;aspect-ratio:1">'+lattice(5,12,{bmu:[4,7]})+'</div>'+
+        '<div style="display:flex;flex-direction:column;gap:8px;min-width:150px">'+
+          '<span class="chip am">BMU &mdash; node (4, 7)</span>'+
+          '<div class="kv"><span>&#8214;x &minus; w&#8214;</span><b>0.0412</b></div>'+
+          '<div class="kv"><span>2nd best</span><b class="ok">(5, 7) &mdash; adjacent</b></div>'+
+          '<div class="kv"><span>nodes moved</span><b>37 of 144</b></div>'+
+          '<div class="note" style="padding:6px 0 0">Ring thickness is <em>h(d,t)</em> &mdash; how much of the '+
+            'winner&rsquo;s pull each neighbour receives. It is distance <em>in the lattice</em>, not in the data.</div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="hud tl"><span class="box"><span class="lb">samples seen</span><span class="vl am">6 800</span></span>'+
+        '<span class="box"><span class="lb">of</span><span class="vl">12 000</span></span></div>'+
+      '<div class="hud tr"><span class="chip live">training</span></div>'+
+    '</div>'+
+    '<div class="ph">Component planes<span class="sp"></span><em>one per input dimension</em><u>?</u></div>'+
+    '<div style="flex:none;display:flex;gap:10px;padding:9px 12px;background:'+BG+'">'+
+      ['red','green','blue'].map(function(n,i){
+        return '<div style="flex:1;display:flex;flex-direction:column;gap:4px">'+
+          '<div style="aspect-ratio:1;max-height:104px">'+heat(40+i,12,120,i)+'</div>'+
+          '<span class="mono" style="font-size:9.5px;color:'+FAINT+';letter-spacing:.1em;text-transform:uppercase">'+n+'</span></div>';
+      }).join('')+
+      '<div class="note" style="flex:2.2;padding:0 0 0 4px">A component plane answers &ldquo;where on the map is this '+
+        'feature high?&rdquo;. Two planes with the same shape mean two correlated features &mdash; which is the only '+
+        'way a 13-dimensional map stays readable.</div>'+
+    '</div>'+
+  '</div>'+
+
+  '<div class="pnl r">'+
+    '<div class="ph">U-matrix<span class="sp"></span><em>mean distance to neighbours</em><u>?</u></div>'+
+    '<div style="flex:none;padding:9px 10px 5px;display:flex;justify-content:center">'+
+      '<div style="width:100%;max-width:158px;aspect-ratio:1">'+heat(60,12,158,"u")+'</div></div>'+
+    '<div class="note">Bright ridges are <em>gaps in the data</em> &mdash; cluster boundaries nobody labelled. '+
+      'Normalised to the current maximum, <em>0.318</em>.</div>'+
+    '<div class="ph">Error<span class="sp"></span><em>per 500 samples</em><u>?</u></div>'+
+    '<div style="height:72px;flex:none">'+chart(14,{})+'</div>'+
+    '<div class="legend"><span style="color:'+AM+'">&#9644; quantisation</span>'+
+      '<span style="color:'+CY+'">&#9647; topographic</span></div>'+
+    '<div class="pb" style="gap:4px">'+
+      kv("quantisation error","0.0387","am")+
+      kv("topographic error","0.021","ok")+
+      kv("nodes never won","6 of 144")+
+      kv("largest hit count","94")+
+    '</div>'+
+    '<div class="ph">Hits<span class="sp"></span><em>samples won per node</em></div>'+
+    '<div style="flex:none;padding:8px 10px 4px;display:flex;justify-content:center">'+
+      '<div style="width:100%;max-width:116px;aspect-ratio:1">'+heat(70,12,116,"hit")+'</div></div>'+
+    '<div class="note">A large dark region means nodes spent on space the data does not occupy.</div>'+
+  '</div>'+
+
+  '<div class="bar"><button class="btn" style="padding:3px 8px">&#9646;&#9646;</button>'+
+    '<span class="mono" style="font-size:10px;color:'+FAINT+'">samples</span>'+
+    '<span class="trk"><i style="width:57%"></i><b style="left:57%"></b></span>'+
+    '<span class="mono" style="font-size:11px;color:'+TX+'">6 800 / 12 000</span>'+
+    '<span class="chip">seed 4417</span></div>'
+);
+
+/* ============ Fig 8.4 — 3D ============ */
+set("mk-3d",
+  "grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:42px minmax(0,1fr);height:344px",
+
+  '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
+    '<span class="seg"><span>2D</span><span class="on">3D</span></span>'+
+    '<span class="chip">drag orbit &middot; wheel zoom &middot; double-click reset</span>'+
+    '<span class="sp"></span>'+
+    '<span class="mono" style="font-size:10.5px;color:'+FAINT+'">the maths is identical in both views &mdash; only the drawing changes</span></div>'+
+
+  '<div class="pnl" style="display:flex;flex-direction:column">'+
+    '<div class="ph">Loss surface<span class="sp"></span>'+
+      '<span class="seg" style="height:18px"><span class="on" style="padding:1px 7px;font-size:10px">Representative</span>'+
+      '<span style="padding:1px 7px;font-size:10px">Literal</span></span></div>'+
+    '<div class="stage" style="flex:1;min-height:0">'+surface()+
+      '<div class="hud tl"><span class="box"><span class="lb">loss here</span><span class="vl am">0.0841</span></span></div>'+
+      '<div class="hud bl"><span class="chip">2 random directions, filter-normalised</span>'+
+        '<span class="chip am">1 240 steps traced</span></div>'+
+    '</div>'+
+    '<div class="note">Two <em>named</em> weights out of 354 barely move the loss and draw a flat bowl. '+
+      'Two random directions rescaled to each layer&rsquo;s own norm draw the surface people recognise &mdash; '+
+      'and the difference between the two modes is itself the lesson.</div>'+
+  '</div>'+
+
+  '<div class="pnl r" style="display:flex;flex-direction:column">'+
+    '<div class="ph">Lattice in input space<span class="sp"></span><em>step 6 800 of 12 000</em></div>'+
+    '<div class="stage" style="flex:1;min-height:0">'+folding()+
+      '<div class="hud tl"><span class="box"><span class="lb">topographic error</span><span class="vl">0.021</span></span></div>'+
+      '<div class="hud bl"><span class="chip cy">1 500 samples</span><span class="chip am">11 &times; 11 lattice</span>'+
+        '<span class="chip">dim 3 &mdash; exact, no projection</span></div>'+
+    '</div>'+
+    '<div class="note">Nodes at their weight vectors, edges from the lattice. A flat sheet at step 0, folded through '+
+      'the cloud by step 6 800. Above three dimensions the projection is <em>named on screen</em>, and it is PCA of the '+
+      'data so the axes do not move while the map does.</div>'+
+  '</div>'
+);
+
+/* ============ Fig 8.5 — guided ============ */
+set("mk-guided",
+  "grid-template-columns:262px minmax(0,1fr) 262px;grid-template-rows:42px minmax(0,1fr);height:432px",
+
+  '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
+    '<span class="seg"><span class="on">Guided</span><span>Explorer</span><span>Lab</span></span>'+
+    '<span class="sp"></span><span class="chip">step 3 of 4</span>'+
+    '<button class="btn gh">Skip to the full app</button></div>'+
+
+  '<div class="pnl l">'+
+    '<div class="ph">Your first network</div>'+
+    '<div class="pb" style="gap:13px">'+
+      '<div style="display:flex;flex-direction:column;gap:5px">'+
+        '<div style="display:flex;gap:8px;align-items:center"><span class="chip ok">done</span>'+
+          '<span style="font-size:12.5px;color:'+DIM+'">1 &middot; Pick some data</span></div>'+
+        '<div style="border:1px solid '+LINE+';border-radius:4px;padding:6px 8px;display:flex;gap:9px;align-items:center">'+
+          '<svg viewBox="0 0 40 26" style="width:38px;flex:none"><path d="M4 19 Q14 4 22 12" fill="none" stroke="'+AM+'" stroke-width="2.4"/>'+
+          '<path d="M18 20 Q26 7 36 15" fill="none" stroke="'+CY+'" stroke-width="2.4"/></svg>'+
+          '<div><div style="font-size:12.5px">Two moons</div>'+
+          '<div class="mono" style="font-size:10px;color:'+FAINT+'">240 points &middot; two colours</div></div></div>'+
+      '</div>'+
+      '<div style="display:flex;flex-direction:column;gap:5px">'+
+        '<div style="display:flex;gap:8px;align-items:center"><span class="chip ok">done</span>'+
+          '<span style="font-size:12.5px;color:'+DIM+'">2 &middot; Pick a shape it can draw</span></div>'+
+        '<div class="seg" style="flex-direction:column">'+
+          '<span style="text-align:left;padding:5px 9px">A straight line</span>'+
+          '<span class="on" style="text-align:left;padding:5px 9px">A curve</span>'+
+          '<span style="text-align:left;padding:5px 9px">Anything at all</span></div>'+
+        '<div class="mono" style="font-size:10px;color:'+FAINT+';line-height:1.5">One middle layer of 8. '+
+          'The word <em style="font-style:normal;color:'+DIM+'">hidden layer</em> comes later.</div>'+
+      '</div>'+
+      '<div style="display:flex;flex-direction:column;gap:5px">'+
+        '<div style="display:flex;gap:8px;align-items:center"><span class="chip live">now</span>'+
+          '<span style="font-size:12.5px;color:'+TX+'">3 &middot; Watch it learn</span></div>'+
+        '<span class="gauge"><i style="width:64%"></i></span>'+
+        '<div class="kv"><span>pass</span><b class="am">128 / 200</b></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;opacity:.42">'+
+        '<span class="chip">next</span><span style="font-size:12.5px">4 &middot; See what changed</span></div>'+
+    '</div>'+
+  '</div>'+
+
+  '<div class="pnl" style="display:flex;flex-direction:column">'+
+    '<div class="stage" style="flex:1;min-height:0">'+field(8, 30, 0.35)+
+      '<div class="hud tl"><span class="box"><span class="lb">getting right</span><span class="vl am">94.7%</span></span></div>'+
+      '<div class="hud bl"><span class="chip">the shaded areas are its two guesses</span></div>'+
+    '</div>'+
+    '<div style="flex:none;border-top:1px solid '+LINE+'">'+
+      '<div class="ph">How wrong it is<span class="sp"></span><em style="color:'+AM+'">falling</em></div>'+
+      '<div style="height:74px">'+chart(9,{})+'</div></div>'+
+  '</div>'+
+
+  '<div class="pnl r">'+
+    '<div class="ph">Before and after</div>'+
+    '<div class="pb" style="gap:9px">'+
+      '<div style="display:flex;flex-direction:column;gap:4px">'+
+        '<span class="mono" style="font-size:9.5px;color:'+FAINT+';letter-spacing:.1em;text-transform:uppercase">its first guess</span>'+
+        '<div style="border:1px solid '+LINE+';border-radius:3px;overflow:hidden;height:78px">'+field(8,16,2.6)+'</div>'+
+        '<div class="kv"><span>right</span><b class="bad">51.2%</b></div></div>'+
+      '<div style="display:flex;flex-direction:column;gap:4px">'+
+        '<span class="mono" style="font-size:9.5px;color:'+FAINT+';letter-spacing:.1em;text-transform:uppercase">now</span>'+
+        '<div style="border:1px solid #4A3B1F;border-radius:3px;overflow:hidden;height:78px">'+field(8,30,0.35)+'</div>'+
+        '<div class="kv"><span>right</span><b class="am">94.7%</b></div></div>'+
+      '<p class="prose dim" style="font-size:12px;border-left:2px solid '+AM+';padding:4px 0 4px 9px">'+
+        'It started by guessing <b>51.2%</b> &mdash; a coin toss. Nobody told it where the boundary was. '+
+        'It found one by being wrong 128 times and adjusting.</p>'+
+    '</div>'+
+  '</div>'
+);
+
+/* ============ Fig 8.6 — architecture editor ============ */
+set("mk-editor",
+  "grid-template-columns:300px minmax(0,1fr);grid-template-rows:42px minmax(0,1fr);height:482px",
+
+  '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
+    '<span class="seg"><span>Guided</span><span>Explorer</span><span class="on">Lab</span></span>'+
+    '<span class="sp"></span><span class="chip bad">edits pending</span></div>'+
+
+  '<div class="pnl l">'+
+    '<div class="ph">Architecture<span class="sp"></span><em>6 layers</em><u>?</u></div>'+
+    '<div class="pb" style="gap:6px">'+
+      '<div class="tree">'+
+        '<div><s></s>input<u>2</u></div>'+
+        ['dense &middot; sigmoid','dense &middot; sigmoid','dense &middot; sigmoid','dense &middot; sigmoid','dense &middot; sigmoid']
+          .map(function(t,i){ return '<div'+(i===1?' class="on"':'')+'><s></s>'+t+'<u>16</u></div>'; }).join('')+
+        '<div><s></s>output &middot; softmax<u>2</u></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:6px"><button class="btn gh" style="flex:1">+ layer</button>'+
+        '<button class="btn gh" style="flex:1">duplicate</button>'+
+        '<button class="btn gh" style="flex:1">remove</button></div>'+
+      '<div class="divide"></div>'+
+      '<div class="sl-head">selected layer</div>'+
+      sl("units", 24, "16")+
+      '<div class="fld"><label>activation</label><span class="seg" style="flex:1.5"><span>relu</span><span class="on">sigmoid</span><span>tanh</span></span></div>'+
+      '<div class="fld"><label>init</label><span class="seg" style="flex:1.5"><span>He</span><span class="on">Glorot</span><span>Zeros</span></span></div>'+
+    '</div>'+
+  '</div>'+
+
+  '<div class="pnl" style="display:flex;flex-direction:column">'+
+    '<div class="ph">Budget<span class="sp"></span><em>recomputed as you type</em></div>'+
+    '<div class="pb" style="gap:5px">'+
+      kv("parameters","1 442","am")+
+      kv("training samples","168")+
+      kv("parameters per sample","8.6","bad")+
+      kv("forward cost / step","23 k MAC")+
+      kv("weight buffer","5.6 kB")+
+    '</div>'+
+    '<div class="ph">What this will do</div>'+
+    '<div class="pb" style="gap:8px">'+
+      '<p class="prose" style="border-left:2px solid '+BAD+';padding:6px 0 6px 10px;background:#241312;border-radius:0 3px 3px 0">'+
+        '<b style="color:'+BAD+'">Five sigmoid layers.</b> Each one multiplies the gradient by at most 0.25, '+
+        'so layer 1 will receive around <b>0.1%</b> of the error the output sees. Expect it to barely move. '+
+        'Switching to relu is challenge 6.</p>'+
+      '<p class="prose" style="border-left:2px solid '+AM+';padding:6px 0 6px 10px;background:#221A0E;border-radius:0 3px 3px 0">'+
+        '<b>1 442 parameters against 168 samples.</b> The network has more freedom than the data has '+
+        'constraints, so it can memorise rather than generalise. Watch the validation curve.</p>'+
+      '<div style="display:flex;gap:8px;margin-top:4px">'+
+        '<button class="btn pri">Rebuild &mdash; this clears the run</button>'+
+        '<button class="btn gh">Discard edits</button></div>'+
+      '<div class="note" style="padding:2px 0">The current run has 1 240 steps in it. Rebuilding reinitialises '+
+        'every weight from seed 4417; nothing is kept.</div>'+
+    '</div>'+
+  '</div>'
+);
+
+/* ============ Fig 8.7 — narrow chassis ============ */
+set("mk-narrow",
+  "grid-template-columns:minmax(0,1fr);grid-template-rows:42px minmax(0,1fr) 34px;height:400px;position:relative;min-width:0;max-width:720px;margin:0 auto",
+
+  '<div class="tb" style="gap:7px;padding:0 8px"><span class="brand">Neural<em>lab</em></span>'+
+    '<button class="btn">Controls</button><button class="btn">Instruments</button>'+
+    '<button class="btn pri">Pause</button>'+
+    '<span class="sp"></span><button class="btn">&#8943;</button></div>'+
+
+  '<div class="pnl" style="position:relative;display:flex;flex-direction:column">'+
+    '<div class="stage" style="flex:1.1;min-height:0">'+graph([2,16,16,2],7,{})+'</div>'+
+    '<div class="ph">Decision boundary<span class="sp"></span><em>64&sup2;</em></div>'+
+    '<div class="stage" style="flex:.9;min-height:0">'+field(3,26,0.4)+'</div>'+
+    '<div class="scrim"></div>'+
+    '<div class="pnl l drawer">'+
+      '<div class="ph">Network<span class="sp"></span><em>354 params</em></div>'+
+      '<div class="pb">'+
+        '<div class="tree"><div><s></s>input<u>2</u></div><div class="on"><s></s>dense &middot; relu<u>16</u></div>'+
+        '<div><s></s>dense &middot; relu<u>16</u></div><div><s></s>output<u>2</u></div></div>'+
+        '<div class="divide"></div>'+
+        sl("learning rate", 42, "0.0100","am")+sl("batch size",34,"16")+sl("noise",30,"0.15")+
+        '<div class="note" style="padding:6px 0 0">Same DOM, same ids, same contents &mdash; '+
+          'the panel does not know which chassis it is in.</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>'+
+
+  '<div class="bar"><span class="mono" style="font-size:10px;color:'+FAINT+'">step</span>'+
+    '<span class="trk"><i style="width:62%"></i><b style="left:62%"></b></span>'+
+    '<span class="mono" style="font-size:11px;color:'+TX+'">1 240 / 2 000</span></div>'
+);
+
+/* ============ Fig 8.8 — challenge track ============ */
+set("mk-track",
+  "grid-template-columns:288px minmax(0,1fr);grid-template-rows:42px minmax(0,1fr);height:434px",
+
+  '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
+    '<span class="seg"><span>Guided</span><span class="on">Explorer</span><span>Lab</span></span>'+
+    '<span class="sp"></span><span class="chip ok">5 of 12 concepts</span>'+
+    '<button class="btn">Help</button></div>'+
+
+  '<div class="pnl l" style="overflow:hidden">'+
+    '<div class="ph">Challenges<span class="sp"></span><em>nothing is locked</em><u>?</u></div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:5px;padding:9px 11px;border-bottom:1px solid '+LINE+'">'+
+      (function(){ var s=""; for(var i=0;i<12;i++) s+='<b style="width:11px;height:11px;border-radius:50%;display:block;'+
+        'border:1px solid '+(i<5?OK:LINE)+';background:'+(i<5?OK:"transparent")+'"></b>'; return s; })()+
+    '</div>'+
+    '<div style="overflow:hidden">'+
+      '<div class="ch-phase">the shape of a network</div>'+
+      '<div class="ch done"><div class="ch-h"><span class="ch-n">1</span><span class="ch-t">One line is not enough</span>'+
+        '<span style="color:'+OK+';font-size:11px">&#10003;</span></div></div>'+
+      '<div class="ch done"><div class="ch-h"><span class="ch-n">2</span><span class="ch-t">Give it a middle</span>'+
+        '<span style="color:'+OK+';font-size:11px">&#10003;</span></div></div>'+
+      '<div class="ch-phase">how it learns</div>'+
+      '<div class="ch done"><div class="ch-h"><span class="ch-n">3</span><span class="ch-t">Too big a step</span>'+
+        '<span style="color:'+OK+';font-size:11px">&#10003;</span></div></div>'+
+      '<div class="ch done"><div class="ch-h"><span class="ch-n">4</span><span class="ch-t">Too small a step</span>'+
+        '<span style="color:'+OK+';font-size:11px">&#10003;</span></div></div>'+
+      '<div class="ch open"><div class="ch-h"><span class="ch-n">5</span><span class="ch-t">All the same to begin with</span>'+
+        '<span></span></div>'+
+        '<p class="ch-b">Every weight starts at exactly zero. Press run and watch the network graph.</p>'+
+        '<p class="ch-b" style="color:'+FAINT+'">Done when: you can say why 8 hidden units behave as 1.</p>'+
+        '<div class="ch-c"><span class="chip">symmetry breaking ?</span><span class="chip">initialisation ?</span></div>'+
+        '<p class="prose" style="font-size:11.5px;border-left:2px solid '+AM+';padding:4px 0 4px 9px;margin-top:2px">'+
+          'Every hidden unit computed the same thing and got the same gradient, so they stayed identical. '+
+          'Accuracy stopped at <b>50.0%</b> &mdash; the network has 8 units and the capacity of 1.</p>'+
+      '</div>'+
+      '<div class="ch ahead"><div class="ch-h"><span class="ch-n">6</span><span class="ch-t">The signal fades</span><span></span></div></div>'+
+      '<div class="ch ahead"><div class="ch-h"><span class="ch-n">7</span><span class="ch-t">Learning the noise</span><span></span></div></div>'+
+      '<div class="ch-phase">a map that teaches itself</div>'+
+      '<div class="ch ahead"><div class="ch-h"><span class="ch-n">9</span><span class="ch-t">A grid that finds its own shape</span><span></span></div></div>'+
+    '</div>'+
+  '</div>'+
+
+  '<div class="pnl" style="display:flex;flex-direction:column">'+
+    '<div class="ph">Challenge 5 &mdash; all the same to begin with<span class="sp"></span><em>zero init &middot; 8 units</em></div>'+
+    '<div class="stage" style="flex:1;min-height:0">'+graph([2,8,8,2],1,{})+
+      '<div class="hud tl"><span class="box"><span class="lb">accuracy</span><span class="vl bad">50.0%</span></span>'+
+        '<span class="box"><span class="lb">step</span><span class="vl">900</span></span></div>'+
+      '<div class="hud bl"><span class="chip bad">every row identical</span>'+
+        '<span class="chip">8 units, capacity of 1</span></div>'+
+    '</div>'+
+    '<div class="note">The graph is the evidence: every edge entering unit 2 is the same colour as every edge '+
+      'entering unit 7, and 900 steps have not changed that. <em>Nothing in gradient descent can break a tie '+
+      'it did not start with.</em></div>'+
+  '</div>'
+);
+
+/* rail scroll-spy */
+var links=[].slice.call(document.querySelectorAll(".rail a")),
+    secs=links.map(function(a){ return document.querySelector(a.getAttribute("href")); });
+function spy(){
+  var y=window.scrollY+140, k=0;
+  for(var i=0;i<secs.length;i++) if(secs[i] && secs[i].offsetTop<=y) k=i;
+  links.forEach(function(a,i){ a.classList.toggle("on", i===k); });
+}
+window.addEventListener("scroll", spy, {passive:true}); spy();
+})();
+</script>

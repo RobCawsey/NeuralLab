@@ -1,0 +1,25 @@
+{
+  "name": "neurallab",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Build a Kohonen map and a multilayer perceptron, and watch both learn",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @neurallab/web",
+    "build": "npm run build --workspace @neurallab/web",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "data": "node --experimental-strip-types scripts/data.ts",
+    "train": "node --experimental-strip-types scripts/train.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.10"
+  }
+}
