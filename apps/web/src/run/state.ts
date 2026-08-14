@@ -76,18 +76,28 @@ export interface AppState {
   /** Wall-clock, for the steps/s readout. */
   startedAt: number;
   elapsedMs: number;
+  /** 1 where the row is a validation sample, for the scatter. Built with the split. */
+  isVal: Uint8Array;
   /** The point the forward pass is evaluated at, in **data** coordinates. */
   probe: [number, number];
 }
 
 /**
- * How often the full train/validation sets are measured.
+ * How often the full train/validation sets are measured — derived from the run's length, not
+ * fixed.
  *
- * Every step would be wrong twice over: it is 168 forward passes against the 16 the step itself
- * did, so the run would spend ten times longer measuring than training, and the chart would be
- * denser than the pixels available to draw it.
+ * A fixed interval is wrong at both ends. Measuring every step is 400 forward passes against the
+ * 16 a step itself does, so the run spends longer measuring than training. A fixed 10 was fine
+ * for a 400-step run and badly wrong for a 20 000-step one: it produced 2 000 points for a chart
+ * 300 px wide — six per pixel — while costing about 45% of the run. Measured on spirals at
+ * 16-16, that showed up as 2 500 steps/s against 12 000 on a shorter run.
+ *
+ * Roughly 200 samples across whatever the target is: under a point per pixel, and a cost that
+ * stays proportional instead of growing with the run.
  */
-export const EVAL_EVERY = 10;
+export function evalEvery(targetSteps: number): number {
+  return Math.max(1, Math.round(targetSteps / 200));
+}
 
 const DEFAULTS = {
   stage: 'explorer' as AppStage,
@@ -122,6 +132,7 @@ export function createState(): AppState {
     evals: [] as EvalPoint[],
     startedAt: 0,
     elapsedMs: 0,
+    isVal: new Uint8Array(0),
     probe: [0, 0] as [number, number],
   };
   rebuildData(s);
@@ -143,6 +154,9 @@ export function rebuildData(s: AppState): void {
   s.parts = split(s.data, s.trainFraction, new Rng(s.seed ^ 0x5f3759df));
   s.standardiser = fitStandardiser(s.data, s.parts.train);
   s.z = standardise(s.data, s.standardiser);
+  // A mask rather than a Set, because the scatter tests it once per point per frame.
+  s.isVal = new Uint8Array(s.data.n);
+  for (let k = 0; k < s.parts.val.length; k++) s.isVal[s.parts.val[k] as number] = 1;
 }
 
 /**

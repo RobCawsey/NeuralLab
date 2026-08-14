@@ -576,7 +576,7 @@ interface Schedule {
         <tr><td>XOR</td><td class="num">2</td><td class="num">4 &ndash; 400</td><td><span class="tag t-vi">MLP</span></td><td>why one layer is not enough</td></tr>
         <tr><td>Two moons</td><td class="num">2</td><td class="num">240</td><td><span class="tag t-vi">MLP</span></td><td>a curved boundary; the default</td></tr>
         <tr><td>Concentric circles</td><td class="num">2</td><td class="num">240</td><td><span class="tag t-vi">MLP</span></td><td>a boundary no line can make</td></tr>
-        <tr><td>Two spirals</td><td class="num">2</td><td class="num">400</td><td><span class="tag t-vi">MLP</span></td><td>capacity, and patience</td></tr>
+        <tr><td>Two spirals</td><td class="num">2</td><td class="num">400</td><td><span class="tag t-vi">MLP</span></td><td>capacity, and patience &mdash; needs 20 k steps <span class="tag t-vi">measured</span></td></tr>
         <tr><td>Gaussian blobs</td><td class="num">2</td><td class="num">k &times; 80</td><td><span class="tag t-vi">MLP</span> <span class="tag t-cy">SOM</span></td><td>clusters both ways</td></tr>
         <tr><td>Colour cube</td><td class="num">3</td><td class="num">1 500</td><td><span class="tag t-cy">SOM</span></td><td>the classic — the map <em>is</em> the picture</td></tr>
         <tr><td>Animals</td><td class="num">13</td><td class="num">16</td><td><span class="tag t-cy">SOM</span></td><td>Kohonen's own semantic map, labelled</td></tr>
@@ -735,6 +735,19 @@ type FromWorker =
     150&nbsp;ms throttle, and re-renders at 128&sup2; the moment the run pauses. The
     resolution is printed next to it, because a reader who notices the boundary getting crisper
     when they hit pause deserves to know it is the drawing and not the network.</p>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 3 &middot; measured</span>
+      <p><strong>The field is four to six times cheaper than the table above.</strong> Built and
+      timed in the browser: 64&sup2; costs <strong>2.6&nbsp;ms</strong> against an estimated 9,
+      and 128&sup2; costs <strong>5.6&nbsp;ms</strong> against an estimated 35. The 150&nbsp;M
+      MAC/s figure was too pessimistic — V8 does considerably better on a loop this shape.</p>
+      <p><strong>The throughput cost is real but modest.</strong> 12&nbsp;274 steps/s with the
+      field on against 15&nbsp;083 without, on 2-8-8-2 — about 19%. So §13's "the field will fight
+      the training loop" happened, and did not need the escape hatch that section proposed.</p>
+      <p>256&sup2; is therefore viable on pause rather than export-only. The ladder is left at
+      64/128 because nothing yet needs the detail, and a resolution nobody asked for is 21&nbsp;M
+      multiply–adds nobody asked for.</p>
+    </div>
 
     <p>The SOM half needs no worker at all by this arithmetic. It gets one anyway, so that the
     pause/step/trace protocol has exactly one implementation and the stepper does not become two
@@ -1211,7 +1224,7 @@ type FromWorker =
       <tr><td class="num">0</td><td>Chassis</td><td>the three-column shell, dark, with a dataset scatter in the stage and nothing learning</td><td><code>core</code>, <code>Rng</code> + golden vector, <code>Dataset</code></td></tr>
       <tr><td class="num">1</td><td>Forward, drawn</td><td>a network you set by hand, activations lighting up as you drag a sample around</td><td><code>mlp</code> forward, network graph</td></tr>
       <tr><td class="num">2</td><td>It learns</td><td>XOR solved on screen in about a second</td><td>backward, SGD, loss chart, <strong>gradcheck + golden</strong></td></tr>
-      <tr><td class="num">3</td><td>Data and boundaries</td><td>six datasets, the decision field, train/val split</td><td><code>data</code>, <code>ImageData</code> blit</td></tr>
+      <tr><td class="num">3</td><td>Data and boundaries</td><td>six datasets, the decision field, train/val split</td><td><code>data</code>, <code>ImageData</code> blit, per-set step counts</td></tr>
       <tr><td class="num">4</td><td>Off the main thread</td><td>4000 steps/s with a smooth 60&nbsp;fps chart; pause, step, throughput readout</td><td>worker, protocol, throttled reports</td></tr>
       <tr><td class="num">5</td><td><strong>The stepper</strong></td><td>backprop paused between operators on one real sample</td><td><code>trace:true</code>, identity test</td></tr>
       <tr><td class="num">6</td><td>Guided first run</td><td>four steps, no hyperparameters, first-guess vs last</td><td>stages, presets, branching afterwords, the flow <em>as data</em></td></tr>

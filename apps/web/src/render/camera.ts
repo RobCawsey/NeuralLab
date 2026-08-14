@@ -69,6 +69,24 @@ export function wy(cam: Camera, py: number): number {
   return cam.centreY - (py - cam.plot.y - cam.plot.h / 2) / cam.scale;
 }
 
+/**
+ * The world rectangle actually visible in a canvas of this size.
+ *
+ * Wider than the box `fitCamera` was given, because one scale on both axes means one axis is
+ * letterboxed. The decision field is computed over *this* rather than over the data's bounds, so
+ * it fills the panel instead of leaving two unexplained margins — the network has an opinion out
+ * there too, and hiding it would imply the boundary stops where the samples do.
+ */
+export function visibleBox(cam: Camera, width: number, height: number): Box {
+  return {
+    minX: wx(cam, 0),
+    maxX: wx(cam, width),
+    // wy flips, so canvas y = height is the *bottom* of the world.
+    minY: wy(cam, height),
+    maxY: wy(cam, 0),
+  };
+}
+
 /** Expand a box by a fraction of its own span, so points do not sit on the frame. */
 export function padBox(box: Box, fraction = 0.08): Box {
   const dx = (box.maxX - box.minX) * fraction;

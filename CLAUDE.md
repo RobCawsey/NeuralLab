@@ -18,6 +18,51 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 3 — "Data and boundaries".** Six generators, the decision field as an `ImageData` blit,
+and the train/validation split made visible. 134 tests.
+
+**The field is four to six times cheaper than §5 budgeted, and that section said "budget, not
+measurement" for exactly this reason.** Measured: 64² is 2.6 ms and 128² is 5.6 ms, against
+estimates of 9 ms and 35 ms. The 150 M MAC/s assumption was too pessimistic — V8 does much better
+on this loop. Throughput with the field on is **12 274 steps/s against 15 083 without**, so it
+costs about 19% and the §13 risk ("the field will fight the training loop") is real but small.
+256² is now viable on pause rather than export-only; the ladder is unchanged because nothing yet
+needs it.
+
+**Two of the new sets could not be solved at any setting the app could reach.** Checkerboard sat
+at 0.66 and spirals at 0.69 — which reads as a broken app, not a hard problem. Measured
+headlessly, both reach ~0.88 at **20 000 steps**, and the step slider stopped at 4 000. At
+12 000 steps/s that is under two seconds, so it was never a performance limit, only a UI one.
+
+- The steps slider is now **logarithmic, 100 → 20 000**, snapped to 1/2/5 × 10ⁿ.
+- **Each generator declares the step count it needs** and selecting it adopts that. Measured, not
+  preferred. A challenge card that wants to *demonstrate* too few steps sets a low one on purpose.
+
+**`evalEvery` scales with the run instead of being fixed at 10.** A fixed interval was fine for
+400 steps and badly wrong for 20 000: 2 000 measurements for a 300 px chart — six per pixel —
+costing about 45% of the run. Roughly 200 samples across whatever the target is took spirals from
+**2 546 to 6 377 steps/s** with no visible change to the chart.
+
+**Validation points are drawn hollow, training points filled.** Shape rather than colour, because
+colour already means class (§7). With a field underneath, "the boundary misses that point" reads
+very differently depending on whether the network was ever shown it.
+
+**The field is computed over the camera's *visible* box, not the data's bounds.** One scale on
+both axes means one axis is letterboxed, and leaving those margins blank would imply the boundary
+stops where the samples do. It does not.
+
+**Training now stops when the tab is hidden, and says so.** `requestAnimationFrame` does not fire
+in a background tab, so training stopped whether the app agreed or not — while the button still
+read *Pause* and `elapsedMs` kept accruing wall-clock against a step count that was not moving,
+quietly corrupting steps/s for the rest of the run. Slice 4's worker is not visibility-throttled
+and removes the limitation.
+
+**A slice-1 note had rotted and was saying something false.** The Output panel read "the weights
+are random and nothing has been trained" underneath a network at 97% accuracy — true when it was
+written, wrong from the first step of slice 2. It branches on `trainer.step` now and quotes the
+live validation accuracy. *This is the second time a fixed string in this project has gone stale;
+§6's rule applies to static copy, not only to challenge afterwords.*
+
 **Slice 2 — "It learns".** Backpropagation, SGD, the loss chart, Train / Step / Reset. The golden
 run reproduces **bit-identically in the browser and in Node**: 0.1007 train loss, 0.9702 accuracy,
 38 epochs. 15 000 steps/s on 2-8-8-2, main thread; the worker is slice 4.
@@ -111,7 +156,7 @@ confident answer is as arbitrary as an even one).
 nothing learning. `packages/core` (Rng, Dataset, split, standardiser), `packages/data` (two
 moons), `apps/web` (scatter, panels, narrow-width drawers), and `npm run data` headless.
 
-**109 tests in 3.4 s.** The pinned ones are the `Rng` golden vector for seed 4417 and the
+**134 tests in 3.5 s.** The pinned ones are the `Rng` golden vector for seed 4417 and the
 noiseless-moons geometry. Both are load-bearing: every reproducibility claim the project makes
 descends from that vector, and the moons geometry is what makes challenge 1 fail on purpose.
 
@@ -169,11 +214,11 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 3 — "Data and boundaries"
+### Next: slice 4 — "Off the main thread"
 
-Six 2D generators, the decision field as an `ImageData` blit, and the train/validation split made
-visible. The field is the expensive drawing, not the training — §5 budgets it at ninety times a
-training step, so it arrives with a throttle and a resolution that changes on pause.
+Training moves into a Web Worker: pause, step, throughput readout, and reports throttled to about
+20 Hz. The field goes with it — measured at 19% of throughput on the main thread, and a worker is
+the place that stops mattering. It also removes the background-tab limitation above.
 
 ## Invariants
 
@@ -234,7 +279,7 @@ argument, including why shipping our own `exp` was rejected.
 
 ```
 packages/core/   pure TS — Rng, Dataset, split, standardiser, bounds
-packages/data/   pure TS — dataset generators (moons, xor; the rest in slice 3)
+packages/data/   pure TS — six 2D generators, each declaring the steps it needs
 packages/mlp/    pure TS — activations, layers, forward, backward, SGD, training loop
 packages/som/    slice 9 — hex lattice (axial coords), bmu, neighbourhood, schedules, u-matrix
 apps/web/        Vite app — canvas render, later workers and Three.js
@@ -250,7 +295,7 @@ no build step for packages and there should not be one.
 ```bash
 npm install          # once, from the repo root
 npm run dev          # http://localhost:5173
-npm test             # 109 tests in ~3.4 s — run these before every commit
+npm test             # 134 tests in ~3.5 s — run these before every commit
 npm run check        # typecheck everything
 npm run data         # headless: build the default set, print it, assert it replays
 npm run train        # headless: the golden run, challenge 1 and challenge 3, all asserted

@@ -309,7 +309,10 @@
           </div>
           <div class="sl">
             <span class="sl-name">steps</span>
-            <input type="range" id="i-steps" min="100" max="4000" step="100" value="400" />
+            <!-- Logarithmic, like the learning rate: 100 to 20 000. The two hardest sets need
+                 ~20 000 and the default is 400, so a linear track would put everything useful
+                 in its first 2%. -->
+            <input type="range" id="i-steps" min="2" max="4.301" step="0.02" value="2.602" />
             <b class="sl-val" id="v-steps">400</b>
           </div>
           <div class="note" id="lr-note" style="padding:0"></div>
@@ -329,7 +332,7 @@
             <div><span>confidence</span><b id="v-conf">—</b></div>
             <div><span>samples</span><b id="v-samples">—</b></div>
           </div>
-          <div class="badge" id="stage-badge">drag to move the probe</div>
+          <div class="badge" id="field-badge">64² · —</div>
         </div>
       </div>
 

@@ -14,9 +14,9 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 2 of 16 — it learns.** Backpropagation, SGD and a loss chart. Two moons goes from a
-scribble to a 97% boundary in 400 steps; XOR without a hidden layer visibly cannot, and with one
-it reaches 100%. Verified by a gradient check that agrees with finite differences to 1e-9.
+**Slice 3 of 16 — data and boundaries.** Six datasets, and the decision field drawn underneath
+them: what the network would answer at every point on the plane, repainted as it learns.
+Validation points are hollow, so you can see which ones it was never shown.
 
 ## Getting started
 
@@ -28,7 +28,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 109 tests, ~3.4 s
+npm test       # 134 tests, ~3.5 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the golden run, plus challenges 1 and 3, all asserted

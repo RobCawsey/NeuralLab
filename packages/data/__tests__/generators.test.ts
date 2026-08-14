@@ -100,8 +100,12 @@ describe('GENERATORS', () => {
   });
 
   it('rejects a key it does not have', () => {
-    expect(isGeneratorKey('spirals')).toBe(false);
+    // Was `spirals` until slice 3 added it. Any name here is a hostage to the next slice, so
+    // this one is deliberately not a dataset anybody would build.
+    expect(isGeneratorKey('nonesuch')).toBe(false);
+    // The real guard: `hasOwnProperty` rather than `in`, so inherited members are not keys.
     expect(isGeneratorKey('toString')).toBe(false);
+    expect(isGeneratorKey('constructor')).toBe(false);
   });
 });
 

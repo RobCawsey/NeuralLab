@@ -46,17 +46,28 @@ export function resize(canvas: HTMLCanvasElement): { w: number; h: number; ctx: 
   return { w, h, ctx };
 }
 
+export interface ScatterOptions {
+  readonly hover?: number | null;
+  /** 1 where the row is a validation sample. Drawn hollow — see below. */
+  readonly isVal?: Uint8Array | null;
+  /** Drawn after the grid and before the points. The decision field goes here. */
+  readonly underlay?: (camera: Camera) => void;
+}
+
 export function drawScatter(
   ctx: CanvasRenderingContext2D,
   ds: Dataset,
   width: number,
   height: number,
-  hover: number | null = null,
+  opts: ScatterOptions = {},
 ): ScatterView {
   const cam = fitCamera(padBox(bounds2d(ds)), width, height);
+  const hover = opts.hover ?? null;
+  const isVal = opts.isVal ?? null;
 
   ctx.clearRect(0, 0, width, height);
   drawGrid(ctx, cam, width, height);
+  opts.underlay?.(cam);
 
   // Points last and unsorted: with 240 samples the overlap is the information — a dense
   // overlap region is exactly where the boundary is hard, and sorting by class would
@@ -66,16 +77,36 @@ export function drawScatter(
     const px = sx(cam, p[0] as number);
     const py = sy(cam, p[1] as number);
     const cls = ds.y === null ? 0 : (ds.y[i] as number);
+    const held = isVal !== null && isVal[i] === 1;
+    const r = i === hover ? 5.5 : 3.4;
 
+    /*
+     * Validation points are hollow, training points filled.
+     *
+     * Shape rather than colour, because colour already means class — §7 — and a second colour
+     * meaning would collide with the first. It matters from this slice on: with a decision field
+     * underneath, "the boundary misses that point" reads very differently depending on whether
+     * the network was ever shown it.
+     */
     ctx.beginPath();
-    ctx.arc(px, py, i === hover ? 5.5 : 3.4, 0, Math.PI * 2);
-    ctx.fillStyle = classColour(cls);
-    ctx.globalAlpha = 0.92;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = i === hover ? '#E4E2EC' : '#0E0D15';
-    ctx.stroke();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    if (held) {
+      // Dark casing first, so a ring stays legible over a saturated patch of field.
+      ctx.lineWidth = 3.2;
+      ctx.strokeStyle = '#0E0D15';
+      ctx.stroke();
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = classColour(cls);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = classColour(cls);
+      ctx.globalAlpha = 0.94;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = i === hover ? '#E4E2EC' : '#0E0D15';
+      ctx.stroke();
+    }
   }
 
   return { camera: cam };

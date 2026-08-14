@@ -13,6 +13,7 @@ import {
   ACTIVATIONS,
   INIT_SCHEMES,
   argmax,
+  createScratch,
   describeShape,
   evaluateRows,
   isActivation,
@@ -23,12 +24,19 @@ import {
   trainStep,
 } from '@neurallab/mlp';
 import { classColour, drawScatter, resize } from './render/scatter.ts';
-import { wx, wy, sx, sy, type Camera } from './render/camera.ts';
+import { wx, wy, sx, sy, visibleBox, type Camera } from './render/camera.ts';
 import { drawNetwork, drawOverCapNotice, heatColour } from './render/network.ts';
 import { drawChart } from './render/chart.ts';
+import {
+  FIELD_RES,
+  FIELD_THROTTLE_MS,
+  computeField,
+  drawField,
+  type Field,
+} from './render/field.ts';
 import { hitNode, layoutNetwork, UNIT_CAP } from './render/graph-layout.ts';
 import {
-  EVAL_EVERY,
+  evalEvery,
   createState,
   evaluateProbe,
   probeInput,
@@ -47,6 +55,20 @@ rebuildNet(state);
 
 let camera: Camera | null = null;
 let hover: number | null = null;
+
+/*
+ * The decision field, and the two numbers that decide when it is recomputed.
+ *
+ * It is roughly three hundred times a training step (§5), so it cannot simply be redrawn every
+ * frame. `fieldStale` is set by anything that changes what the network would answer; the loop
+ * honours it at most every `FIELD_THROTTLE_MS` while running, and immediately at the higher
+ * resolution once the run stops.
+ */
+let field: Field | null = null;
+let fieldStale = true;
+let fieldAt = 0;
+let fieldMs = 0;
+let fieldScratch = createScratch(state.model);
 let focus: [number, number] | null = null;
 let dragging = false;
 
@@ -86,13 +108,14 @@ function tick(): void {
 
   while (state.trainer.step < state.targetSteps && performance.now() - started < FRAME_BUDGET_MS) {
     const metrics = trainStep(state.trainer, state.z);
+    fieldStale = true;
     state.history.push({
       step: metrics.step,
       loss: metrics.loss,
       lossMin: metrics.lossMin,
       lossMax: metrics.lossMax,
     });
-    if (metrics.step % EVAL_EVERY === 0 || metrics.step === state.targetSteps) {
+    if (metrics.step % evalEvery(state.targetSteps) === 0 || metrics.step === state.targetSteps) {
       recordEval();
     }
     ran++;
@@ -151,6 +174,17 @@ function fillSelect(id: string, values: readonly string[], current: string): HTM
   return select;
 }
 
+/** Set once `boot` has wired the steps slider, so a dataset change can move it. */
+let syncSteps: () => void = () => {};
+
+/** 1, 2, 5 × 10ⁿ — a target of 6 314 steps is a number nobody chose. */
+function snapSteps(raw: number): number {
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.max(100, raw))));
+  const norm = raw / mag;
+  const mult = norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10;
+  return Math.min(20000, Math.max(100, Math.round(mult * mag)));
+}
+
 function fillDatasets(): void {
   const select = $<HTMLSelectElement>('i-dataset');
   for (const [key, gen] of Object.entries(GENERATORS)) {
@@ -163,6 +197,13 @@ function fillDatasets(): void {
   select.addEventListener('change', () => {
     if (select.value in GENERATORS) {
       state.dataset = select.value as typeof state.dataset;
+      /*
+       * Adopt the set's own step count — measured, not preferred. The checkerboard is at 0.66
+       * after 4 000 steps and 0.88 after 20 000; opening it at 400 would show a reader a
+       * failure and let them conclude it was the app's.
+       */
+      state.targetSteps = GENERATORS[state.dataset].steps;
+      syncSteps();
       regenerateData();
     }
   });
@@ -240,6 +281,39 @@ function renderNetPanels(): void {
   let edges = 0;
   for (const l of state.model.layers) edges += l.W.length;
   $('s-edges').textContent = String(edges);
+}
+
+/**
+ * The note under the output bars.
+ *
+ * It was a fixed string in slice 1 saying the weights were random — true then, and wrong from
+ * the first training step of slice 2 onward. It sat under a network at 97% accuracy telling a
+ * reader its answers meant nothing. §6's rule is that explanations are written against live
+ * values; a string that is only true before anything happens is exactly the kind that rots.
+ */
+function renderOutputNote(out: Float64Array): void {
+  const note = $('out-note');
+  const best = argmax(out);
+  const confidence = out[best] as number;
+  const name = state.data.classNames[best] ?? `class ${best}`;
+
+  if (state.trainer.step === 0) {
+    note.innerHTML =
+      'The weights are <em>random</em> and nothing has been trained, so whichever class wins ' +
+      'here means nothing — a confident answer is as arbitrary as an even one. Press ' +
+      '<em>Reinitialise</em> and watch the same probe change its mind.';
+    return;
+  }
+
+  const held = state.evals[state.evals.length - 1];
+  const accuracy = held ? `${(held.valAccuracy * 100).toFixed(1)}%` : null;
+  note.innerHTML =
+    `After ${state.trainer.step.toLocaleString()} steps the network calls this point ` +
+    `<em>${name}</em> at <em>${confidence.toFixed(3)}</em>` +
+    (accuracy === null
+      ? '.'
+      : `, and it is right about <em>${accuracy}</em> of the points it was never shown. ` +
+        'Drag the probe across the boundary to watch the confidence fall and recover.');
 }
 
 /** The output probabilities, as labelled bars. Redrawn on every probe move. */
@@ -356,6 +430,17 @@ function renderRunPanels(): void {
   const seconds = state.elapsedMs / 1000;
   $('s-sps').textContent = seconds > 0.2 ? Math.round(trainer.step / seconds).toLocaleString() : '—';
 
+  /*
+   * The field's resolution and price, printed rather than hidden.
+   *
+   * A reader who notices the boundary getting crisper the moment they hit pause deserves to
+   * know that is the drawing changing and not the network. §5 asked for exactly this.
+   */
+  if (field) {
+    $('field-badge').textContent =
+      `${field.res}² · ${(field.res * field.res).toLocaleString()} passes · ${fieldMs.toFixed(1)} ms`;
+  }
+
   const btn = $<HTMLButtonElement>('btn-train');
   const finished = trainer.step >= targetSteps;
   btn.textContent = state.running ? 'Pause' : finished ? 'Done' : 'Train';
@@ -406,13 +491,49 @@ function renderRunPanels(): void {
   }
 }
 
+/**
+ * Recompute the field if it is stale and we are allowed to.
+ *
+ * Two resolutions, and the switch is announced in the panel header rather than left for a
+ * reader to notice the boundary getting crisper. While the weights are moving there is no point
+ * paying for detail that is wrong a frame later; once they stop, there is nothing else to spend
+ * the time on.
+ */
+function refreshField(camera: Camera, width: number, height: number): void {
+  const wantRes = state.running ? FIELD_RES.live : FIELD_RES.paused;
+  const now = performance.now();
+  const throttled = state.running && now - fieldAt < FIELD_THROTTLE_MS;
+  if (field !== null && !fieldStale && field.res === wantRes) return;
+  if (throttled && field !== null) return;
+
+  const started = performance.now();
+  field = computeField(
+    state.model,
+    fieldScratch,
+    state.standardiser,
+    visibleBox(camera, width, height),
+    wantRes,
+    Math.max(2, state.data.classes),
+  );
+  fieldMs = performance.now() - started;
+  fieldAt = performance.now();
+  fieldStale = false;
+}
+
 function render(): void {
   const out = evaluateProbe(state);
   const input = probeInput(state);
 
   const scatterFit = resize(stage);
   if (scatterFit) {
-    const view = drawScatter(scatterFit.ctx, state.data, scatterFit.w, scatterFit.h, hover);
+    const view = drawScatter(scatterFit.ctx, state.data, scatterFit.w, scatterFit.h, {
+      hover,
+      isVal: state.isVal,
+      underlay: (cam) => {
+        refreshField(cam, scatterFit.w, scatterFit.h);
+        if (field) drawField(scatterFit.ctx, field, cam);
+      },
+    });
     camera = view.camera;
     drawProbe(scatterFit.ctx, out);
   }
@@ -443,6 +564,7 @@ function render(): void {
   $('v-conf').textContent = Number.isFinite(confidence) ? confidence.toFixed(3) : 'NaN';
 
   renderOutputs(out);
+  renderOutputNote(out);
   renderActivations(input);
   renderRunPanels();
 }
@@ -484,6 +606,7 @@ function drawProbe(ctx: CanvasRenderingContext2D, out: Float64Array): void {
 function regenerateData(): void {
   setRunning(false);
   rebuildData(state);
+  fieldStale = true;
   // The output width follows the class count, so new data means a new network. Rebuilding from
   // the same weight seed keeps "change the noise" from also meaning "reroll the weights".
   rebuildNet(state);
@@ -498,6 +621,10 @@ function regenerateData(): void {
 function regenerateNet(): void {
   setRunning(false);
   rebuildNet(state);
+  // The field needs its own scratch, sized for the new shape, and must never share the
+  // trainer’s — evaluating into it mid-step would overwrite the activations backward reads.
+  fieldScratch = createScratch(state.model);
+  fieldStale = true;
   focus = null;
   renderNetPanels();
   render();
@@ -722,8 +849,20 @@ function boot(): void {
       render();
     });
 
-  slider('i-steps', 'v-steps', () => state.targetSteps, (v) => (state.targetSteps = v),
-    (v) => String(v), () => render());
+  // Logarithmic, snapped to a readable figure — nobody wants a target of 6 314 steps.
+  const steps = $<HTMLInputElement>('i-steps');
+  const showSteps = (): void => {
+    steps.value = String(Math.log10(state.targetSteps));
+    $('v-steps').textContent = state.targetSteps.toLocaleString();
+  };
+  steps.addEventListener('input', () => {
+    state.targetSteps = snapSteps(Math.pow(10, Number(steps.value)));
+    $('v-steps').textContent = state.targetSteps.toLocaleString();
+    history.replaceState(null, '', writeUrl(state));
+    render();
+  });
+  showSteps();
+  syncSteps = showSteps;
 
   $('btn-train').addEventListener('click', () => setRunning(!state.running));
 
@@ -731,6 +870,7 @@ function boot(): void {
     setRunning(false);
     if (state.trainer.step >= state.targetSteps) return;
     const m = trainStep(state.trainer, state.z);
+    fieldStale = true;
     state.history.push({ step: m.step, loss: m.loss, lossMin: m.lossMin, lossMax: m.lossMax });
     recordEval();
     render();
@@ -758,6 +898,22 @@ function boot(): void {
   drawer('btn-panel-left', 'panel-left');
   drawer('btn-panel-right', 'panel-right');
   $('scrim').addEventListener('click', closeDrawers);
+
+  /*
+   * Pause when the tab goes away, and say so.
+   *
+   * `requestAnimationFrame` does not fire in a background tab, so training stops whether the app
+   * agrees or not. Without this the button still reads *Pause*, the badge still reads *training*,
+   * and `elapsedMs` keeps accruing wall-clock against a step count that is not moving — so the
+   * steps/s readout is quietly wrong for the rest of the run.
+   *
+   * Stopping is the honest response while the loop lives on the main thread. It stops being a
+   * limitation in slice 4: a worker is not throttled by visibility, and the run will survive a
+   * tab switch because it is no longer the renderer's frame budget that drives it.
+   */
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state.running) setRunning(false);
+  });
 
   window.addEventListener('keydown', (event) => {
     if (event.target instanceof HTMLInputElement && event.target.type === 'text') return;
