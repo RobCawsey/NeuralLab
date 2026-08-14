@@ -75,7 +75,9 @@ export function evalEvery(targetSteps: number): number {
 }
 
 const DEFAULTS = {
-  stage: 'explorer' as AppStage,
+  // The app opens in the guided flow — §6/§13. Explorer and Lab are one click away and nothing
+  // in either is locked; this only decides what a reader sees before they have clicked anything.
+  stage: 'guided' as AppStage,
   net: 'mlp' as NetKind,
   dataset: 'moons' as GeneratorKey,
   n: 240,

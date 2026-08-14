@@ -285,12 +285,27 @@ export function spirals(opts: GeneratorOptions = {}): Dataset {
  * challenge card that wants to *demonstrate* too few steps sets a low one on purpose.
  */
 export const GENERATORS = {
-  xor: { label: 'XOR', build: xor, steps: 1200 },
-  moons: { label: 'Two moons', build: moons, steps: 400 },
-  circles: { label: 'Concentric circles', build: circles, steps: 800 },
-  blobs: { label: 'Three blobs', build: blobs, steps: 600 },
-  checkerboard: { label: 'Checkerboard', build: checkerboard, steps: 20000 },
-  spirals: { label: 'Two spirals', build: spirals, steps: 20000 },
+  xor: { label: 'XOR', build: xor, steps: 1200, blurb: 'Four clusters, diagonally opposite.' },
+  moons: { label: 'Two moons', build: moons, steps: 400, blurb: 'Two curved arms, interleaved.' },
+  circles: {
+    label: 'Concentric circles',
+    build: circles,
+    steps: 800,
+    blurb: 'A ring inside a ring.',
+  },
+  blobs: { label: 'Three blobs', build: blobs, steps: 600, blurb: 'Three separate clusters.' },
+  checkerboard: {
+    label: 'Checkerboard',
+    build: checkerboard,
+    steps: 20000,
+    blurb: 'Sixteen alternating squares.',
+  },
+  spirals: {
+    label: 'Two spirals',
+    build: spirals,
+    steps: 20000,
+    blurb: 'Two spirals, wound around each other.',
+  },
 } as const;
 
 export type GeneratorKey = keyof typeof GENERATORS;

@@ -99,6 +99,14 @@ describe('GENERATORS', () => {
     }
   });
 
+  it('gives every entry a blurb', () => {
+    // The guided flow's "pick some data" step reads this directly, rather than keeping a
+    // second, hand-written description that could drift from the generator it describes.
+    for (const [key, gen] of Object.entries(GENERATORS)) {
+      expect(gen.blurb.length, key).toBeGreaterThan(0);
+    }
+  });
+
   it('rejects a key it does not have', () => {
     // Was `spirals` until slice 3 added it. Any name here is a hostage to the next slice, so
     // this one is deliberately not a dataset anybody would build.

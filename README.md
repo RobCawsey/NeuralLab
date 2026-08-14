@@ -14,10 +14,10 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 5 of 16 — the stepper.** `S` pauses training and opens a full-screen view of one real
-step — sample, forward through every layer, the loss, backward through every layer, the update —
-each drawn from the exact function the worker runs at full speed. A test runs 200 traced and 200
-untraced steps from the same seed and checks every weight agrees.
+**Slice 6 of 16 — guided first run.** The app opens with no sliders at all: pick some data, pick a
+shape it can draw, watch it learn, see what changed. Four steps, ending with the network's very
+first guess replayed against its last — and an afterword that says so honestly even on the runs
+that don't improve.
 
 ## Getting started
 
@@ -29,7 +29,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 173 tests, ~3.7 s
+npm test       # 190 tests, ~3.7 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the golden run, plus challenges 1 and 3, all asserted

@@ -1489,6 +1489,33 @@ npm run som          <i># headless SOM: 6000 steps, prints QE, TE and an ASCII U
       value rather than a second implementation.</li>
     </ul>
 
+    <div class="risk"><span class="lbl">Amendment &middot; slice 6 &middot; built and measured</span>
+      <p><strong>The step metadata and the DOM split further than planned</strong>, and it was
+      worth it for a reason unrelated to the flow itself: <code>run/guided.ts</code> holds the
+      four steps, the shape-to-hidden-layer mapping, and the branching afterword as pure functions
+      with no import from the DOM, so it sits in the same vitest glob as <code>camera.ts</code> and
+      <code>trace.ts</code> and is checked under Node. <code>ui/guided.ts</code> is the renderer
+      and is exercised live instead, the same split slice&nbsp;5 used for the stepper.</p>
+      <p><strong>Two controls went stale, and it was one bug wearing two costumes.</strong> Picking
+      a dataset or a shape in Guided writes <code>state.dataset</code>/<code>state.hidden</code>
+      directly rather than driving the <code>&lt;select&gt;</code> or the preset buttons, so
+      neither control's DOM learned about the change — picking XOR in Guided left Explorer's
+      dropdown reading "Two moons". Fixed centrally in <code>renderDataPanels</code>/
+      <code>renderNetPanels</code>, which now write every control from state on <em>every</em>
+      call rather than trusting each call site to remember. Three redundant assignments elsewhere
+      were deleted with the fix.</p>
+      <p><strong>A second bug, found the same way: progress advanced after the render that needed
+      it, not before.</strong> <code>pickDataset</code>/<code>pickShape</code> call straight into
+      <code>regenerateData</code>/<code>regenerateNet</code>, which end in a synchronous
+      <code>render()</code> — and that call re-enters the guided panel's own render before either
+      function returns. Advancing the step counter afterwards left the panel painted once with the
+      <em>previous</em> step still marked current, with nothing left to trigger a second paint.</p>
+      <p>Verified on a run the branching afterword was written for rather than against: XOR with
+      no hidden layer &mdash; challenge 1, reachable from Guided precisely because it never says
+      the words "hidden layer" &mdash; landed at 47.2% &rarr; 44.4%, accuracy that went
+      <em>down</em>. The afterword said so.</p>
+    </div>
+
     <p>The cost that was worrying: <em>two sets of copy to keep true</em>. It is unchanged and it
     is the thing to watch. The defence is the same one §6 applies to the challenge cards —
     afterwords are written against live values, and a test renders every branch of both flows

@@ -18,6 +18,49 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 6 — "Guided first run".** The app opens in a guided flow: pick data, pick a shape, watch
+it learn, see what changed. No hyperparameters, four steps, ending with the network's first guess
+replayed against its last. 190 tests.
+
+**React is still not here, and neither is a second render path.** `pickDataset`/`pickShape` call
+straight into the same `regenerateData`/`regenerateNet` Explorer's own controls use, so a choice
+made in Guided is not a parallel way of changing the run — it is the same one. Reusing them is
+also what makes "Skip to the full app" free: the run underneath is already exactly the one
+Explorer would show.
+
+**Two controls went stale, and the bug is the same shape both times.** Guided sets `state.dataset`
+and `state.hidden` directly rather than driving the `<select>` or the preset buttons, so neither
+control's DOM was told about the change — picking XOR in Guided left Explorer's dropdown reading
+"Two moons". Fixed once, centrally: `renderDataPanels`/`renderNetPanels` now write the controls
+from state on every call, so a display element can no longer disagree with the state it is
+supposed to be showing. Three redundant call sites (the ones that used to remember to do this by
+hand) were deleted along with the fix.
+
+**Progress lives in the flow's own closure, not in `AppState`.** Switching to Explorer and back
+must not restart anything, and it doesn't: `current`, `before` and `after` persist across the
+stage switch because nothing about switching stage touches them. Verified live — trained a run,
+skipped to Explorer, switched back to Guided, and step 4's numbers were exactly where they were
+left.
+
+**A found-by-running ordering bug: progress advanced *after* the rebuild it was supposed to
+precede.** `pickDataset`/`pickShape` call straight into `regenerateData`/`regenerateNet`, which
+end in a synchronous `render()` — and that render calls back into the guided panel's own render
+before either function returns. Advancing `current` afterwards left the panel repainting once
+with the *previous* step still marked "on", with nothing left to prompt a second repaint. Fixed
+by moving the advance before the call, not after — the general lesson is that anything a
+synchronous rebuild renders mid-call has already missed its chance to see state set afterwards.
+
+**The afterword has to survive an unlucky run, and one was on hand to prove it.** Picking XOR with
+no hidden layer from Guided is challenge 1, reachable now from the flow that never mentions
+hidden layers — and it landed at 47.2% → 44.4%, an accuracy that went *down*. The branching
+afterword said so honestly rather than claiming the improvement a fixed string would have.
+
+**The "before" snapshot is the network's only unrepeatable moment, so it is taken exactly once.**
+Random weights, step zero — a network is only ever this untouched right after `regenerateNet`
+returns and before training starts. `captureSnapshot` runs synchronously in that gap, off the
+same mirror model and the same `computeField` slice 3 already built; no protocol round trip and
+no second implementation of the field.
+
 **Slice 5 — "The stepper".** The teaching screen — the point of the whole project. `S` or the
 toolbar button pauses training and opens a full-screen view of one real step: 7 stages for
 2-8-8-2 (sample → forward × 2 → output+loss → backward × 2 → update), each drawn from one
@@ -240,7 +283,7 @@ confident answer is as arbitrary as an even one).
 nothing learning. `packages/core` (Rng, Dataset, split, standardiser), `packages/data` (two
 moons), `apps/web` (scatter, panels, narrow-width drawers), and `npm run data` headless.
 
-**173 tests in 3.7 s.** The pinned ones are the `Rng` golden vector for seed 4417 and the
+**190 tests in 3.7 s.** The pinned ones are the `Rng` golden vector for seed 4417 and the
 noiseless-moons geometry. Both are load-bearing: every reproducibility claim the project makes
 descends from that vector, and the moons geometry is what makes challenge 1 fail on purpose.
 
@@ -298,14 +341,12 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 6 — "Guided first run"
+### Next: slice 7 — "Diagnostics"
 
-The app opens in a guided flow: pick data, pick a shape, watch it learn, see what changed. No
-hyperparameters, four steps, ending with the network's first guess replayed against its last.
-
-Per §13's answered question, this slice builds the frame *and* the perceptron's flow together,
-taking the flow as data from the start — the map's flow arrives in slice 11, once the U-matrix
-exists to be the third step.
+Gradient flow, activation and weight histograms, a dead-unit count, and two more optimisers —
+momentum and Adam — for the training panel to offer alongside plain SGD. This is also where the
+architecture editor's neighbour, the parameter-budget readout, starts to matter: a network wide
+enough to see a histogram worth looking at is also wide enough to overfit 168 training rows.
 
 ## Invariants
 
@@ -382,7 +423,7 @@ no build step for packages and there should not be one.
 ```bash
 npm install          # once, from the repo root
 npm run dev          # http://localhost:5173
-npm test             # 173 tests in ~3.7 s — run these before every commit
+npm test             # 190 tests in ~3.7 s — run these before every commit
 npm run check        # typecheck everything
 npm run data         # headless: build the default set, print it, assert it replays
 npm run train        # headless: the golden run, challenge 1 and challenge 3, all asserted

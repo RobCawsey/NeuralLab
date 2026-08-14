@@ -31,6 +31,7 @@ import { drawChart } from './render/chart.ts';
 import { FIELD_RES, FIELD_THROTTLE_MS, drawField, type Field } from './render/field.ts';
 import { TrainerClient } from './workers/client.ts';
 import { createStepper } from './ui/stepper.ts';
+import { createGuided } from './ui/guided.ts';
 import { hitNode, layoutNetwork, UNIT_CAP } from './render/graph-layout.ts';
 import {
   createState,
@@ -144,6 +145,26 @@ const stepper = createStepper({
   trainer,
   onOpen: () => setRunning(false),
   classNames: () => state.data.classNames,
+});
+
+/*
+ * The guided flow — §6/§13. `pickDataset` and `pickShape` reuse exactly the same rebuild path
+ * Explorer's controls use (`regenerateData`/`regenerateNet`), so a choice made here is not a
+ * second, parallel way of changing the run — it is the same one, with different words on the
+ * button.
+ */
+const guided = createGuided({
+  getState: () => state,
+  pickDataset: (key) => {
+    state.dataset = key;
+    regenerateData();
+  },
+  pickShape: (hidden) => {
+    state.hidden = [...hidden];
+    regenerateNet();
+  },
+  startTraining: () => setRunning(true),
+  skipToExplorer: () => $('stage-explorer').click(),
 });
 
 /**
@@ -260,6 +281,16 @@ function segment(groupId: string, onPick: (id: string) => void): void {
 function renderDataPanels(): void {
   const { data, parts, standardiser } = state;
 
+  /*
+   * The `<select>` is a control, not a display — nothing reads it back except its own `change`
+   * listener, so a caller that sets `state.dataset` directly (the guided flow does, rather than
+   * driving the dropdown) leaves it showing whatever was chosen last. Found by picking XOR in
+   * Guided and then opening Explorer to find the dropdown still reading "Two moons" while every
+   * other panel correctly said XOR. Setting it to a value it already holds is a no-op — this is
+   * safe to run on every call, including the ones the dropdown's own listener triggered.
+   */
+  $<HTMLSelectElement>('i-dataset').value = state.dataset;
+
   $('ph-data').textContent = data.name.toLowerCase();
   $('ph-seed').textContent = `seed ${state.seed}`;
   $('v-samples').textContent = String(data.n);
@@ -289,6 +320,11 @@ function renderDataPanels(): void {
 }
 
 function renderNetPanels(): void {
+  // Same fix as the dataset `<select>`, for the same reason: a caller that sets `state.hidden`
+  // directly — the guided flow does — must not leave this control showing an earlier shape.
+  $<HTMLInputElement>('i-arch').value = state.hidden.join('-');
+  syncPresets();
+
   $('ph-arch').textContent = describeShape(state.model);
   $('s-params').textContent = String(paramCount(state.model));
   let edges = 0;
@@ -581,6 +617,7 @@ function render(): void {
   renderOutputNote(out);
   renderActivations(input);
   renderRunPanels();
+  guided.render();
 }
 
 /** The probe itself, drawn over the scatter as a ring in the predicted class's colour. */
@@ -813,7 +850,6 @@ function boot(): void {
     arch.classList.toggle('bad', invalid);
     if (invalid) return;
     state.hidden = parsed;
-    syncPresets();
     regenerateNet();
   });
 
@@ -825,7 +861,6 @@ function boot(): void {
       'arch-deep': [8, 8, 8],
     };
     state.hidden = widths[id] ?? [];
-    arch.value = state.hidden.join('-');
     arch.classList.remove('bad');
     regenerateNet();
   });
@@ -972,7 +1007,8 @@ function boot(): void {
   for (const b of Array.from($('stages').querySelectorAll('button'))) {
     b.classList.toggle('on', b.id === `stage-${state.stage}`);
   }
-  syncPresets();
+  // No syncPresets() here — renderNetPanels() below calls it, along with everything else that
+  // has to agree with state.hidden before the first paint.
 
   $('hint').textContent = 'space train · . step · R resample · W reinitialise';
 
