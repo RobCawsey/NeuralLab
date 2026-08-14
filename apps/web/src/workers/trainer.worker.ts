@@ -13,7 +13,7 @@
  */
 
 import { evaluateRows, flattenWeights, trainStep, type Net, type Trainer } from '@neurallab/mlp';
-import { createScratch, createTrainer, type Scratch } from '@neurallab/mlp';
+import { createScratch, createTrainer, createTraceScratch, type Scratch, type TraceScratch } from '@neurallab/mlp';
 import { Rng, type Dataset, type Split, type Standardiser } from '@neurallab/core';
 import { buildData, buildNet } from '../run/build.ts';
 import { computeField } from '../render/field.ts';
@@ -37,6 +37,8 @@ interface Session {
   readonly standardiser: Standardiser;
   readonly evalScratch: Scratch;
   readonly probeScratch: Scratch;
+  /** Its own buffers again, so a trace cannot touch the gradients the update is about to use. */
+  readonly traceScratch: TraceScratch;
   readonly weights: Float32Array;
   /** Loss spread accumulated since the last chart point. */
   lossSum: number;
@@ -90,6 +92,7 @@ function open(setup: TrainSetup): Session {
     // correctly and is very hard to see.
     evalScratch: createScratch(net),
     probeScratch: createScratch(net),
+    traceScratch: createTraceScratch(net),
     weights: new Float32Array(flattenWeights(net).length),
     lossSum: 0,
     lossCount: 0,
@@ -248,6 +251,30 @@ ctx.onmessage = (event: MessageEvent<ToWorker>): void => {
       case 'probe': {
         if (!session) return;
         probe(session, message.requestId, message.res, message.box);
+        return;
+      }
+      case 'trace': {
+        const s = session;
+        if (!s) return;
+        // Stop first: a trace is a deliberate single step, and letting the run continue
+        // underneath would make the recording describe a network that had already moved on.
+        s.running = false;
+        const m = trainStep(s.trainer, s.z, {
+          trace: { indexInBatch: message.indexInBatch, into: s.traceScratch },
+        });
+        if (m.step % s.setup.evalEvery === 0) takePoint(s);
+        if (m.trace !== undefined) {
+          post({
+            type: 'trace',
+            generation: s.setup.generation,
+            requestId: message.requestId,
+            trace: m.trace,
+            step: s.trainer.step,
+            epoch: s.trainer.epoch,
+            weights: flattenWeights(s.net),
+          });
+        }
+        report(s);
         return;
       }
     }

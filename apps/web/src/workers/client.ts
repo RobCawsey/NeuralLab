@@ -8,7 +8,7 @@
 
 import type { Field } from '../render/field.ts';
 import type { Box } from '../render/camera.ts';
-import type { TrainConfig } from '@neurallab/mlp';
+import type { StepTrace, TrainConfig } from '@neurallab/mlp';
 import type { FromWorker, RunPoint, ToWorker, TrainSetup } from './protocol.ts';
 
 export interface TrainerEvents {
@@ -23,6 +23,7 @@ export interface TrainerEvents {
     running: boolean;
   }) => void;
   onField?: (field: Field, ms: number) => void;
+  onTrace?: (trace: StepTrace, weights: Float32Array, step: number) => void;
   onError?: (message: string) => void;
 }
 
@@ -32,6 +33,7 @@ export class TrainerClient {
   private nextRequest = 1;
   /** The only probe reply worth accepting. Anything older is a field for weights that moved on. */
   private awaitingProbe = 0;
+  private awaitingTrace = 0;
   private probeBox: Box | null = null;
 
   constructor(events: TrainerEvents) {
@@ -87,6 +89,10 @@ export class TrainerClient {
         );
         return;
       }
+      case 'trace':
+        if (message.requestId !== this.awaitingTrace) return;
+        this.events.onTrace?.(message.trace, message.weights, message.step);
+        return;
       case 'error':
         this.events.onError?.(message.message);
         return;
@@ -114,6 +120,7 @@ export class TrainerClient {
     this.classes = classes;
     this.generation = setup.generation;
     this.awaitingProbe = 0;
+    this.awaitingTrace = 0;
     this.send({ type: 'reset', setup });
   }
 
@@ -127,6 +134,12 @@ export class TrainerClient {
 
   configure(train: TrainConfig): void {
     this.send({ type: 'config', train });
+  }
+
+  /** Run one traced step. Advances the run — see the protocol note on `trace`. */
+  requestTrace(indexInBatch: number): void {
+    this.awaitingTrace = this.nextRequest++;
+    this.send({ type: 'trace', requestId: this.awaitingTrace, indexInBatch });
   }
 
   requestField(res: number, box: Box): void {

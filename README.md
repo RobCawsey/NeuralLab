@@ -14,9 +14,10 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 4 of 16 — off the main thread.** Training runs in a Web Worker at around 12 000 steps a
-second, so the decision field no longer competes with it and a run survives switching tabs. Six
-datasets, a live boundary, and a loss chart that shows the real spread of each batch.
+**Slice 5 of 16 — the stepper.** `S` pauses training and opens a full-screen view of one real
+step — sample, forward through every layer, the loss, backward through every layer, the update —
+each drawn from the exact function the worker runs at full speed. A test runs 200 traced and 200
+untraced steps from the same seed and checks every weight agrees.
 
 ## Getting started
 
@@ -28,7 +29,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 145 tests, ~3.5 s
+npm test       # 173 tests, ~3.7 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the golden run, plus challenges 1 and 3, all asserted

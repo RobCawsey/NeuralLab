@@ -18,6 +18,7 @@ import {
   type Grads,
 } from './backward.ts';
 import { sampleLoss } from './loss.ts';
+import { captureTrace, type StepTrace, type TraceScratch } from './trace.ts';
 
 export interface TrainConfig {
   readonly learningRate: number;
@@ -63,6 +64,8 @@ export function createTrainer(
 }
 
 export interface StepMetrics {
+  /** Present only when a trace was asked for. */
+  readonly trace?: StepTrace;
   readonly step: number;
   readonly epoch: number;
   /** Mean loss over the batch — the number the chart's line is drawn from. */
@@ -81,9 +84,24 @@ export interface StepMetrics {
  * changes nothing about the sequence, which is what keeps the golden test meaningful whatever
  * machine it runs on.
  */
-export function trainStep(t: Trainer, ds: Dataset): StepMetrics {
+export interface StepOptions {
+  /**
+   * Record one sample of this batch for the stepper — §6's teaching screen.
+   *
+   * The index is clamped into the batch, so "trace sample 12" on a batch of 8 traces the last
+   * one rather than throwing or silently tracing nothing.
+   */
+  readonly trace?: { readonly indexInBatch: number; readonly into: TraceScratch };
+}
+
+export function trainStep(t: Trainer, ds: Dataset, options: StepOptions = {}): StepMetrics {
   const { net, scratch, grads, order, config } = t;
   const size = Math.max(1, Math.min(config.batchSize, order.length));
+  const traceIndex =
+    options.trace === undefined
+      ? -1
+      : Math.max(0, Math.min(size - 1, Math.floor(options.trace.indexInBatch)));
+  let traceRow = -1;
 
   zeroGrads(grads);
   let total = 0;
@@ -99,6 +117,7 @@ export function trainStep(t: Trainer, ds: Dataset): StepMetrics {
       t.epoch++;
     }
     const row = order[t.cursor++] as number;
+    if (k === traceIndex) traceRow = row;
     const x = sample(ds, row);
     const y = ds.y === null ? 0 : (ds.y[row] as number);
 
@@ -111,6 +130,31 @@ export function trainStep(t: Trainer, ds: Dataset): StepMetrics {
 
   // Divide once, at the end, rather than scaling every sample's contribution as it arrives.
   scaleGrads(grads, 1 / size);
+
+  /*
+   * The trace is taken here and nowhere else, because this is the only moment where both halves
+   * are true at once: the weights are still the ones the forward pass ran on, and `grads` already
+   * holds the batch mean the update is about to apply.
+   *
+   * It runs on its own scratch and its own gradient buffers, so it cannot perturb `grads`, and
+   * `trainStep` returns the same metrics and leaves the same weights whether it ran or not — the
+   * property `trace.test.ts` asserts bit-for-bit.
+   */
+  let trace: StepTrace | undefined;
+  if (options.trace !== undefined && traceRow >= 0) {
+    trace = captureTrace(
+      net,
+      ds,
+      traceRow,
+      traceIndex,
+      size,
+      t.step + 1,
+      config.learningRate,
+      grads,
+      options.trace.into,
+    );
+  }
+
   sgdStep(net, grads, config.learningRate);
   t.step++;
 
@@ -125,6 +169,7 @@ export function trainStep(t: Trainer, ds: Dataset): StepMetrics {
     lossMin: min,
     lossMax: max,
     samples: size,
+    ...(trace === undefined ? {} : { trace }),
   };
 }
 

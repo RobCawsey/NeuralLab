@@ -11,7 +11,7 @@
  */
 
 import type { DataConfig, NetConfig } from '../run/build.ts';
-import type { TrainConfig } from '@neurallab/mlp';
+import type { StepTrace, TrainConfig } from '@neurallab/mlp';
 
 export interface TrainSetup {
   /**
@@ -71,7 +71,14 @@ export type ToWorker =
       readonly requestId: number;
       readonly res: number;
       readonly box: { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number };
-    };
+    }
+  /**
+   * Run one step and record a sample of it — the stepper.
+   *
+   * It advances the run by one step, because a trace of a step that did not happen would be a
+   * prediction rather than a recording. The stepper *is* stepping.
+   */
+  | { readonly type: 'trace'; readonly requestId: number; readonly indexInBatch: number };
 
 export type FromWorker =
   | {
@@ -100,6 +107,15 @@ export type FromWorker =
       readonly cls: Uint8Array;
       readonly conf: Float32Array;
       readonly ms: number;
+    }
+  | {
+      readonly type: 'trace';
+      readonly generation: number;
+      readonly requestId: number;
+      readonly trace: StepTrace;
+      readonly step: number;
+      readonly epoch: number;
+      readonly weights: Float32Array;
     }
   | { readonly type: 'error'; readonly message: string };
 

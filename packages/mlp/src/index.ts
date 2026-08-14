@@ -52,6 +52,17 @@ export {
   trainStep,
   type EvalResult,
   type StepMetrics,
+  type StepOptions,
   type TrainConfig,
   type Trainer,
 } from './train.ts';
+export {
+  captureTrace,
+  createTraceScratch,
+  largest,
+  peak,
+  type LayerBackward,
+  type LayerForward,
+  type StepTrace,
+  type TraceScratch,
+} from './trace.ts';

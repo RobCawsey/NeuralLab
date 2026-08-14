@@ -18,6 +18,38 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 5 — "The stepper".** The teaching screen — the point of the whole project. `S` or the
+toolbar button pauses training and opens a full-screen view of one real step: 7 stages for
+2-8-8-2 (sample → forward × 2 → output+loss → backward × 2 → update), each drawn from one
+`StepTrace` produced by the same `trainStep` the worker drains at full speed. 173 tests.
+
+**Tracing cannot change the run, and that is proven rather than careful.** A trace is captured
+between averaging the batch's gradients and applying them — the one moment both are true at
+once — using its own scratch and its own gradient buffers; the real ones are only read. A test
+runs 200 steps with tracing on and 200 with it off, from the same seed, and asserts every weight
+in the network agrees exactly. Verified live too: the golden run reached its pinned 0.1007 /
+0.9702 / 38 epochs after two stepper steps had run at the start of the same session.
+
+**One trace covers a whole step, not one layer.** "Stepping" through the stages is a client-side
+cursor into a single recording — forward through every layer, backward through every layer, the
+update already applied — not a re-run of the network one layer at a time. A new trace is only
+requested from the worker when the reader pages past the *last* stage of the one on screen, which
+is also why `next` never allocates and `run to end of step` is instant.
+
+**The output layer's backward step is folded into "output and loss", not given its own stage.**
+Under softmax + cross-entropy the Jacobian cancels and `dz = a − onehot(target)` directly — the
+one place in backprop where the chain rule does not appear as two visible factors. The stepper
+says so rather than leaving a reader hunting for a δ × a′ that was never computed. `trace.fused`
+carries the flag; `trace.test.ts` asserts it is true for exactly one layer.
+
+**Δw shown is the change applied to the weight, not the raw gradient.** Negated and scaled by the
+learning rate at capture time, so a reader comparing the strip to the weight before and after sees
+them agree — the raw gradient would have the sign backwards.
+
+**The trace protocol follows slice 4's generation rule exactly**, because it is the same shape of
+bug: a `trace` request advances the run by one real step, so the reply has to be checked against
+the session it was asked of, the same as every other worker message.
+
 **Slice 4 — "Off the main thread".** Training lives in a Web Worker. `apps/web/src/main.ts` no
 longer calls `trainStep` at all — it sends a configuration, receives weights and chart points
 about 25 times a second, and draws. 145 tests.
@@ -208,7 +240,7 @@ confident answer is as arbitrary as an even one).
 nothing learning. `packages/core` (Rng, Dataset, split, standardiser), `packages/data` (two
 moons), `apps/web` (scatter, panels, narrow-width drawers), and `npm run data` headless.
 
-**145 tests in 3.5 s.** The pinned ones are the `Rng` golden vector for seed 4417 and the
+**173 tests in 3.7 s.** The pinned ones are the `Rng` golden vector for seed 4417 and the
 noiseless-moons geometry. Both are load-bearing: every reproducibility claim the project makes
 descends from that vector, and the moons geometry is what makes challenge 1 fail on purpose.
 
@@ -266,14 +298,14 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 5 — "The stepper"
+### Next: slice 6 — "Guided first run"
 
-The teaching screen, and the point of the project: a full-screen view that pauses backpropagation
-between operators and shows each one acting on real values. It drives `trainStep(net, batch,
-{trace:true})` — the same function the worker drains at full speed — and a test asserts traced and
-untraced runs are bit-identical, because the moment that stops being true the screen becomes a lie.
+The app opens in a guided flow: pick data, pick a shape, watch it learn, see what changed. No
+hyperparameters, four steps, ending with the network's first guess replayed against its last.
 
-The trace has to cross the worker boundary, so slice 4's generation rule applies to it directly.
+Per §13's answered question, this slice builds the frame *and* the perceptron's flow together,
+taking the flow as data from the start — the map's flow arrives in slice 11, once the U-matrix
+exists to be the third step.
 
 ## Invariants
 
@@ -350,7 +382,7 @@ no build step for packages and there should not be one.
 ```bash
 npm install          # once, from the repo root
 npm run dev          # http://localhost:5173
-npm test             # 145 tests in ~3.5 s — run these before every commit
+npm test             # 173 tests in ~3.7 s — run these before every commit
 npm run check        # typecheck everything
 npm run data         # headless: build the default set, print it, assert it replays
 npm run train        # headless: the golden run, challenge 1 and challenge 3, all asserted

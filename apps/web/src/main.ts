@@ -30,6 +30,7 @@ import { drawNetwork, drawOverCapNotice, heatColour } from './render/network.ts'
 import { drawChart } from './render/chart.ts';
 import { FIELD_RES, FIELD_THROTTLE_MS, drawField, type Field } from './render/field.ts';
 import { TrainerClient } from './workers/client.ts';
+import { createStepper } from './ui/stepper.ts';
 import { hitNode, layoutNetwork, UNIT_CAP } from './render/graph-layout.ts';
 import {
   createState,
@@ -126,6 +127,10 @@ const trainer = new TrainerClient({
     render();
   },
 
+  onTrace: (trace) => {
+    stepper.receiveTrace(trace);
+  },
+
   onError: (message) => {
     // A worker that dies looks exactly like one that is paused, so this has to be visible.
     state.running = false;
@@ -133,6 +138,12 @@ const trainer = new TrainerClient({
     $('run-note').innerHTML = `Training stopped: <em>${message}</em>`;
     render();
   },
+});
+
+const stepper = createStepper({
+  trainer,
+  onOpen: () => setRunning(false),
+  classNames: () => state.data.classNames,
 });
 
 /**
@@ -908,6 +919,9 @@ function boot(): void {
     regenerateNet();
   });
 
+  $('btn-stepper').addEventListener('click', () => stepper.open());
+  $('st-close').addEventListener('click', () => stepper.close());
+
   $('btn-reinit').addEventListener('click', () => {
     state.weightSeed = 1 + ((state.weightSeed * 7919 + 13) % 9999);
     regenerateNet();
@@ -941,6 +955,15 @@ function boot(): void {
     if (event.key === '.') $('btn-step').click();
     if (event.key === 'r' || event.key === 'R') $('btn-resample').click();
     if (event.key === 'w' || event.key === 'W') $('btn-reinit').click();
+    if (event.key === 's' || event.key === 'S') $('btn-stepper').click();
+
+    if (stepper.isOpen()) {
+      // Scoped to the overlay being open, so arrow keys do not hijack the sliders behind it.
+      if (event.key === 'ArrowRight') $('st-next').click();
+      if (event.key === 'ArrowLeft') $('st-prev').click();
+      if (event.key === 'Escape') stepper.close();
+      return;
+    }
     if (event.key === 'Escape') closeDrawers();
   });
 

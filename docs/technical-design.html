@@ -809,11 +809,30 @@ type FromWorker =
     <p>The teaching screen, and the single most important thing in the project. A full-screen
     view that pauses the algorithm between operators and shows each one acting on real values.</p>
 
-    <p>It drives <code>trainStep(net, batch, { trace: true })</code> — the same function the worker
+    <p>It drives <code>trainStep(net, batch, { trace: {...} })</code> — the same function the worker
     drains at full speed. A test asserts that traced and untraced runs produce bit-identical
     weights, because the moment that stops being true the screen becomes a lie. This is Evolab's
     rule, lifted intact, and it is the reason the trace flag lives inside the kernel rather than
     in a parallel "explain" implementation.</p>
+
+    <div class="risk"><span class="lbl">Amendment &middot; slice 5 &middot; built and measured</span>
+      <p><strong>One trace covers a whole step, not one operator.</strong> Stepping through the
+      stages is a client-side cursor into a single <code>StepTrace</code> &mdash; forward through
+      every layer, backward through every layer, the update already applied &mdash; rather than a
+      re-run of the network one layer at a time. A new trace is only requested from the worker
+      when the reader pages past the <em>last</em> stage of the one on screen.</p>
+      <p><strong>The output layer's backward step has no stage of its own.</strong> Under softmax
+      + cross-entropy the Jacobian cancels and <code>dz = a &minus; onehot(target)</code> directly
+      &mdash; the one place in backprop where the chain rule does not appear as two visible
+      factors. So for 2-8-8-2 the count is <strong>seven</strong> stages, not the eight
+      "forward &times; 3, backward &times; 3, update" would suggest: sample, forward &times; 2,
+      output-and-loss (which folds in that fused backward step), backward &times; 2, update. The
+      screen says why, rather than leaving a reader hunting for a &delta; &times; a&prime; that
+      was never computed.</p>
+      <p>Verified live: the golden run reached its pinned 0.1007 / 0.9702 / 38 epochs after two
+      stepper steps had run at the start of the same session, and a test runs 200 traced steps
+      against 200 untraced from the same seed and checks every weight agrees exactly.</p>
+    </div>
 
     <div class="grid g2" style="max-width:none">
       <div class="card"><h4>MLP &mdash; seven stages</h4>
@@ -1245,7 +1264,7 @@ type FromWorker =
       <tr><td class="num">2</td><td>It learns</td><td>XOR solved on screen in about a second</td><td>backward, SGD, loss chart, <strong>gradcheck + golden</strong></td></tr>
       <tr><td class="num">3</td><td>Data and boundaries</td><td>six datasets, the decision field, train/val split</td><td><code>data</code>, <code>ImageData</code> blit, per-set step counts</td></tr>
       <tr><td class="num">4</td><td>Off the main thread</td><td>4000 steps/s with a smooth 60&nbsp;fps chart; pause, step, throughput readout</td><td>worker, protocol, throttled reports</td></tr>
-      <tr><td class="num">5</td><td><strong>The stepper</strong></td><td>backprop paused between operators on one real sample</td><td><code>trace:true</code>, identity test</td></tr>
+      <tr><td class="num">5</td><td><strong>The stepper</strong></td><td>backprop paused between operators on one real sample</td><td><code>StepTrace</code>, generation-checked worker message, identity test</td></tr>
       <tr><td class="num">6</td><td>Guided first run</td><td>four steps, no hyperparameters, first-guess vs last</td><td>stages, presets, branching afterwords, the flow <em>as data</em></td></tr>
       <tr><td class="num">7</td><td>Diagnostics</td><td>gradient flow, activation and weight histograms, dead-unit count; Adam and momentum</td><td>optimisers, <code>Diagnostics</code></td></tr>
       <tr><td class="num">8</td><td>Architecture editor</td><td>add and remove layers live, with validation that explains why</td><td>editor panel, param budget</td></tr>
