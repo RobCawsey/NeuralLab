@@ -18,6 +18,58 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 4 — "Off the main thread".** Training lives in a Web Worker. `apps/web/src/main.ts` no
+longer calls `trainStep` at all — it sends a configuration, receives weights and chart points
+about 25 times a second, and draws. 145 tests.
+
+**Measured, on the identical spirals run: 6 377 → 11 960 steps/s.** Slice 3's own numbers are the
+baseline, so this is 88% on the same work. On moons at 2-16-16-2 it reaches 28 500.
+
+**Training now survives a background tab, which was slice 3's stated limitation.** Verified by
+running 20 000 steps to completion with `document.hidden === true` — slice 3 would have stalled
+at step 0, because `requestAnimationFrame` does not fire there. Workers are not
+visibility-throttled, so the `visibilitychange` pause slice 3 needed is deleted.
+
+**The worker is not sent the dataset.** It is sent the *configuration* and rebuilds from the same
+seed through the same `run/build.ts`. The two sides agree because there is one implementation, not
+because anything is kept in sync — and a test asserts `buildData` is byte-identical across calls,
+since a split differing by one row would have the page drawing one dataset while the worker
+trained on another, both looking entirely reasonable.
+
+**The golden run reproduces through the worker: 0.1007 / 0.9702 / 38 epochs.** `build.test.ts`
+also asserts that chunking the loop into uneven bursts — 7, 113, 1, 96, 183 — and into 400 single
+steps gives bit-identical results. That is invariant 2, and it is what makes the worker's 40 ms
+chunking safe.
+
+### Two races, both found by running it
+
+**Pressing Train during a rebuild sent `run` against a session the page had discarded.** The run
+happened and the step counter advanced to 20 000, but not one chart point arrived — so accuracy
+read `—` under a completed run. The intent is now held and honoured on `ready` rather than
+dropped.
+
+**A report already in flight when the architecture changed was applied to the rebuilt mirror.**
+`applyWeights` threw `weight buffer is 114, expected 354` — *the guard written in this slice
+caught the bug in this slice*. The dangerous case is the one that does **not** throw: a rebuild
+that changes only the dataset keeps the same shape, so stale weights would apply cleanly and the
+graph would show a network that no longer exists. Every session now carries a **generation**,
+echoed on every message, and the client drops anything older.
+
+> The general shape, worth remembering for slice 5: **a rebuild does not cancel messages already
+> in flight.** Anything crossing the worker boundary needs to say which session it belongs to.
+
+**`fieldPending` exists for the same reason.** A probe request and its reply are separated by a
+round trip now; without the flag every render in that gap would queue another, and the worker
+would spend its time drawing fields for weights it had already left behind.
+
+**One `RunPoint`, not two arrays.** Slice 2 kept a per-step loss for the band and a periodic
+evaluation for the lines, sampled at different rates and reconciled in the chart. The worker
+produces both halves at the same moment, so nothing is dropped and nothing is invented.
+
+**The worker imports `computeField` rather than reimplementing it.** The first version had its own
+copy of the grid loop, which would have left slice 3's tests — cell centres, bottom-left origin,
+the standardiser — covering a function that no longer ran anywhere.
+
 **Slice 3 — "Data and boundaries".** Six generators, the decision field as an `ImageData` blit,
 and the train/validation split made visible. 134 tests.
 
@@ -156,7 +208,7 @@ confident answer is as arbitrary as an even one).
 nothing learning. `packages/core` (Rng, Dataset, split, standardiser), `packages/data` (two
 moons), `apps/web` (scatter, panels, narrow-width drawers), and `npm run data` headless.
 
-**134 tests in 3.5 s.** The pinned ones are the `Rng` golden vector for seed 4417 and the
+**145 tests in 3.5 s.** The pinned ones are the `Rng` golden vector for seed 4417 and the
 noiseless-moons geometry. Both are load-bearing: every reproducibility claim the project makes
 descends from that vector, and the moons geometry is what makes challenge 1 fail on purpose.
 
@@ -214,11 +266,14 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 4 — "Off the main thread"
+### Next: slice 5 — "The stepper"
 
-Training moves into a Web Worker: pause, step, throughput readout, and reports throttled to about
-20 Hz. The field goes with it — measured at 19% of throughput on the main thread, and a worker is
-the place that stops mattering. It also removes the background-tab limitation above.
+The teaching screen, and the point of the project: a full-screen view that pauses backpropagation
+between operators and shows each one acting on real values. It drives `trainStep(net, batch,
+{trace:true})` — the same function the worker drains at full speed — and a test asserts traced and
+untraced runs are bit-identical, because the moment that stops being true the screen becomes a lie.
+
+The trace has to cross the worker boundary, so slice 4's generation rule applies to it directly.
 
 ## Invariants
 
@@ -282,7 +337,7 @@ packages/core/   pure TS — Rng, Dataset, split, standardiser, bounds
 packages/data/   pure TS — six 2D generators, each declaring the steps it needs
 packages/mlp/    pure TS — activations, layers, forward, backward, SGD, training loop
 packages/som/    slice 9 — hex lattice (axial coords), bmu, neighbourhood, schedules, u-matrix
-apps/web/        Vite app — canvas render, later workers and Three.js
+apps/web/        Vite app — canvas render, the training worker, later Three.js
 server/          slice 15 — ASP.NET Core + SQLite
 docs/            the technical design document
 ```
@@ -295,7 +350,7 @@ no build step for packages and there should not be one.
 ```bash
 npm install          # once, from the repo root
 npm run dev          # http://localhost:5173
-npm test             # 134 tests in ~3.5 s — run these before every commit
+npm test             # 145 tests in ~3.5 s — run these before every commit
 npm run check        # typecheck everything
 npm run data         # headless: build the default set, print it, assert it replays
 npm run train        # headless: the golden run, challenge 1 and challenge 3, all asserted

@@ -1,37 +1,20 @@
 /**
  * Everything the page knows, in one plain object.
  *
- * No state library, and that is settled rather than pending — §12 of the design document. There
- * is one writer and one render pass; the day a panel's DOM needs reconciling rather than
- * retexturing is the day that gets revisited.
+ * From slice 4 the page does **not** own the trainer — the worker does. What lives here is a
+ * mirror: a network whose weights are replaced from each report, used to draw the graph and to
+ * answer the probe. It is never trained on this thread, and nothing here calls `trainStep`.
+ *
+ * No state library, and that is settled rather than pending — §12. One writer, one render pass.
  */
 
-import {
-  fitStandardiser,
-  split,
-  standardise,
-  Rng,
-  type Dataset,
-  type Split,
-  type Standardiser,
-} from '@neurallab/core';
-import { GENERATORS, isGeneratorKey, type GeneratorKey } from '@neurallab/data';
-import {
-  createNet,
-  createScratch,
-  createTrainer,
-  forward,
-  initialise,
-  isActivation,
-  isInitScheme,
-  parseHidden,
-  type Activation,
-  type InitScheme,
-  type Net,
-  type Scratch,
-  type Trainer,
-} from '@neurallab/mlp';
-import type { EvalPoint, HistoryPoint } from '../render/chart.ts';
+import { forward, type Net, type Scratch } from '@neurallab/mlp';
+import { createScratch } from '@neurallab/mlp';
+import type { Dataset, Split, Standardiser } from '@neurallab/core';
+import { isGeneratorKey, GENERATORS, type GeneratorKey } from '@neurallab/data';
+import { isActivation, isInitScheme, parseHidden, type Activation, type InitScheme } from '@neurallab/mlp';
+import { buildData, buildNet, type DataConfig, type NetConfig } from './build.ts';
+import type { RunPoint, TrainSetup } from '../workers/protocol.ts';
 
 export type AppStage = 'guided' | 'explorer' | 'lab';
 export type NetKind = 'mlp' | 'som';
@@ -52,48 +35,40 @@ export interface AppState {
   weightSeed: number;
   learningRate: number;
   batchSize: number;
-  /** Total steps the run stops at, so the progress bar and the chart have an end. */
   targetSteps: number;
-  /** Rebuilt by `rebuildData`; never assigned from outside. */
+
   data: Dataset;
   parts: Split;
   standardiser: Standardiser;
-  /**
-   * The dataset the network actually trains on — standardised once, here.
-   *
-   * Kept beside the raw one rather than replacing it: the scatter draws data coordinates
-   * because that is what the reader is pointing at, and the network only ever sees standardised
-   * inputs. Two views of one set, and the panels are explicit about which they hold.
-   */
+  /** The standardised copy — the only one the network ever sees. */
   z: Dataset;
-  /** Rebuilt by `rebuildNet`. */
+  isVal: Uint8Array;
+
+  /** A mirror of the worker's network, for drawing. Never trained here. */
   model: Net;
   scratch: Scratch;
-  trainer: Trainer;
+
+  /** Everything the chart draws, one point per evaluation. Produced by the worker. */
+  points: RunPoint[];
+  step: number;
+  epoch: number;
   running: boolean;
-  history: HistoryPoint[];
-  evals: EvalPoint[];
-  /** Wall-clock, for the steps/s readout. */
-  startedAt: number;
-  elapsedMs: number;
-  /** 1 where the row is a validation sample, for the scatter. Built with the split. */
-  isVal: Uint8Array;
+  stepsPerSecond: number;
+  diverged: boolean;
+  /** True between asking the worker to rebuild and its `ready`. */
+  rebuilding: boolean;
+
   /** The point the forward pass is evaluated at, in **data** coordinates. */
   probe: [number, number];
 }
 
 /**
- * How often the full train/validation sets are measured — derived from the run's length, not
- * fixed.
+ * How often the full train/validation sets are measured — derived from the run's length.
  *
  * A fixed interval is wrong at both ends. Measuring every step is 400 forward passes against the
- * 16 a step itself does, so the run spends longer measuring than training. A fixed 10 was fine
- * for a 400-step run and badly wrong for a 20 000-step one: it produced 2 000 points for a chart
- * 300 px wide — six per pixel — while costing about 45% of the run. Measured on spirals at
- * 16-16, that showed up as 2 500 steps/s against 12 000 on a shorter run.
- *
- * Roughly 200 samples across whatever the target is: under a point per pixel, and a cost that
- * stays proportional instead of growing with the run.
+ * 16 a step itself does. A fixed 10 was fine for a 400-step run and badly wrong for a 20 000-step
+ * one: 2 000 points for a 300 px chart — six per pixel — costing about 45% of the run, measured
+ * as 2 546 steps/s against 6 377 once this scaled.
  */
 export function evalEvery(targetSteps: number): number {
   return Math.max(1, Math.round(targetSteps / 200));
@@ -124,15 +99,16 @@ export function createState(): AppState {
     parts: undefined as unknown as Split,
     standardiser: undefined as unknown as Standardiser,
     z: undefined as unknown as Dataset,
+    isVal: new Uint8Array(0),
     model: undefined as unknown as Net,
     scratch: undefined as unknown as Scratch,
-    trainer: undefined as unknown as Trainer,
+    points: [] as RunPoint[],
+    step: 0,
+    epoch: 0,
     running: false,
-    history: [] as HistoryPoint[],
-    evals: [] as EvalPoint[],
-    startedAt: 0,
-    elapsedMs: 0,
-    isVal: new Uint8Array(0),
+    stepsPerSecond: 0,
+    diverged: false,
+    rebuilding: false,
     probe: [0, 0] as [number, number],
   };
   rebuildData(s);
@@ -140,84 +116,71 @@ export function createState(): AppState {
   return s;
 }
 
-/**
- * Regenerate the dataset and everything derived from it.
- *
- * The split gets its **own** Rng, seeded from the same number. Sharing one generator with the
- * dataset would make the split depend on how many draws the generator happened to take, so
- * changing the sample count would silently reshuffle the split as well — two things moving when
- * the reader moved one.
- */
-export function rebuildData(s: AppState): void {
-  const gen = GENERATORS[s.dataset];
-  s.data = gen.build({ n: s.n, noise: s.noise, seed: s.seed });
-  s.parts = split(s.data, s.trainFraction, new Rng(s.seed ^ 0x5f3759df));
-  s.standardiser = fitStandardiser(s.data, s.parts.train);
-  s.z = standardise(s.data, s.standardiser);
-  // A mask rather than a Set, because the scatter tests it once per point per frame.
-  s.isVal = new Uint8Array(s.data.n);
-  for (let k = 0; k < s.parts.val.length; k++) s.isVal[s.parts.val[k] as number] = 1;
+export function dataConfig(s: AppState): DataConfig {
+  return {
+    dataset: s.dataset,
+    n: s.n,
+    noise: s.noise,
+    seed: s.seed,
+    trainFraction: s.trainFraction,
+  };
 }
 
-/**
- * Rebuild the network from the current architecture and dataset.
- *
- * Input width and output width come from the data, not from a control: a network whose output
- * count disagrees with the number of classes is not a configuration a reader should be able to
- * reach by dragging a slider.
- *
- * Softmax on the output and cross-entropy for the loss, always. Slice 7 can offer alternatives;
- * offering them now would be four dead radio buttons.
- */
+export function netConfig(s: AppState): NetConfig {
+  return {
+    hidden: [...s.hidden],
+    hiddenAct: s.hiddenAct,
+    init: s.init,
+    weightSeed: s.weightSeed,
+  };
+}
+
+/** Everything the worker needs to reproduce this run exactly. */
+export function trainSetup(s: AppState, generation: number): TrainSetup {
+  return {
+    generation,
+    data: dataConfig(s),
+    net: netConfig(s),
+    train: { learningRate: s.learningRate, batchSize: s.batchSize },
+    evalEvery: evalEvery(s.targetSteps),
+  };
+}
+
+export function rebuildData(s: AppState): void {
+  const built = buildData(dataConfig(s));
+  s.data = built.data;
+  s.parts = built.parts;
+  s.standardiser = built.standardiser;
+  s.z = built.z;
+  s.isVal = built.isVal;
+}
+
+/** Rebuild the mirror network. The worker rebuilds its own from the same configuration. */
 export function rebuildNet(s: AppState): void {
-  const outputs = Math.max(2, s.data.classes);
-  s.model = createNet({
-    shape: [s.data.dim, ...s.hidden, outputs],
-    hidden: s.hiddenAct,
-    output: 'softmax',
-    loss: 'crossEntropy',
-  });
-  initialise(s.model, s.init, new Rng(s.weightSeed));
+  s.model = buildNet(netConfig(s), s.data.dim, s.data.classes);
   s.scratch = createScratch(s.model);
   resetRun(s);
 }
 
-/**
- * Throw away the run, keeping the network and the data.
- *
- * The trainer's shuffle Rng is seeded from the weight seed, so "reinitialise and train again"
- * replays exactly — the same weights *and* the same batch order. Seeding it from the data seed
- * instead would make changing the noise slider also reshuffle the batches.
- */
+/** Forget the run. The worker is told separately; this is only the page's view of it. */
 export function resetRun(s: AppState): void {
-  s.trainer = createTrainer(
-    s.model,
-    s.parts.train,
-    { learningRate: s.learningRate, batchSize: s.batchSize },
-    new Rng(s.weightSeed),
-  );
+  s.points = [];
+  s.step = 0;
+  s.epoch = 0;
   s.running = false;
-  s.history = [];
-  s.evals = [];
-  s.startedAt = 0;
-  s.elapsedMs = 0;
+  s.stepsPerSecond = 0;
+  s.diverged = false;
 }
 
 /**
- * Evaluate the network at the probe point.
+ * Evaluate the mirror network at the probe point.
  *
  * The probe is held in data coordinates because that is what the reader is pointing at, and
  * standardised here — the network only ever sees standardised inputs, so a forward pass on raw
  * coordinates would be answering a different question from the one the scatter is asking.
  */
 export function evaluateProbe(s: AppState): Float64Array {
-  const { mean, sd } = s.standardiser;
-  const x = new Float32Array(s.data.dim);
-  for (let k = 0; k < s.data.dim; k++) {
-    const raw = k === 0 ? s.probe[0] : k === 1 ? s.probe[1] : 0;
-    x[k] = (raw - (mean[k] as number)) / (sd[k] as number);
-  }
-  return forward(s.model, x, s.scratch);
+  return forward(s.model, probeInput(s), s.scratch);
 }
 
 /** The standardised probe, for the input column of the network graph. */
@@ -234,7 +197,7 @@ export function probeInput(s: AppState): Float32Array {
 /* ---------------- URL persistence ---------------- */
 
 /**
- * Everything needed to reproduce this screen, and nothing else. §8 of the design document.
+ * Everything needed to reproduce this screen, and nothing else. §8.
  *
  * Read defensively: these values are user-writable and outlive the code reading them. A junk
  * parameter degrades to its default rather than throwing on boot.
@@ -264,7 +227,7 @@ export function readUrl(s: AppState, search: string): void {
   s.seed = clampInt(q.get('seed'), 1, 9999, s.seed);
   s.weightSeed = clampInt(q.get('wseed'), 1, 9999, s.weightSeed);
   s.batchSize = clampInt(q.get('batch'), 1, 256, s.batchSize);
-  s.targetSteps = clampInt(q.get('steps'), 50, 20000, s.targetSteps);
+  s.targetSteps = clampInt(q.get('steps'), 100, 20000, s.targetSteps);
   s.noise = clampFloat(q.get('noise'), 0, 0.6, s.noise);
   s.trainFraction = clampFloat(q.get('split'), 0.5, 0.9, s.trainFraction);
   // Up to 500, because challenge 3 needs a rate that visibly destroys the network and the
@@ -289,6 +252,11 @@ export function writeUrl(s: AppState): string {
   q.set('batch', String(s.batchSize));
   q.set('steps', String(s.targetSteps));
   return '?' + q.toString();
+}
+
+/** The step count this dataset actually needs — measured, not preferred. See GENERATORS. */
+export function suggestedSteps(key: GeneratorKey): number {
+  return GENERATORS[key].steps;
 }
 
 function clampInt(raw: string | null, lo: number, hi: number, fallback: number): number {

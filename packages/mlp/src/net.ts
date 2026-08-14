@@ -166,6 +166,52 @@ export function forward(net: Net, x: ArrayLike<number>, scratch: Scratch): Float
   return scratch.a[net.layers.length - 1] as Float64Array;
 }
 
+/**
+ * Total floats in a network's weights and biases, laid out layer by layer.
+ *
+ * `W` then `b`, per layer, in order. Invariant 3 promised a whole network serialises as one
+ * buffer; slice 4 is where that stops being an aspiration and becomes the thing crossing a
+ * worker boundary twenty times a second.
+ */
+export function weightCount(net: Net): number {
+  return paramCount(net);
+}
+
+/** Copy every weight and bias into one flat buffer. Allocates unless `into` is supplied. */
+export function flattenWeights(net: Net, into?: Float32Array): Float32Array {
+  const out = into ?? new Float32Array(weightCount(net));
+  let at = 0;
+  for (const layer of net.layers) {
+    out.set(layer.W, at);
+    at += layer.W.length;
+    out.set(layer.b, at);
+    at += layer.b.length;
+  }
+  return out;
+}
+
+/**
+ * Read one flat buffer back into a network's layers.
+ *
+ * Throws on a length mismatch rather than filling what fits. A buffer of the wrong size means
+ * the sender and receiver disagree about the architecture, and a partially-applied network
+ * still runs — it just answers with a mixture of two models, which is not a failure anybody
+ * would trace back to here.
+ */
+export function applyWeights(net: Net, from: Float32Array): void {
+  const expected = weightCount(net);
+  if (from.length !== expected) {
+    throw new Error(`weight buffer is ${from.length}, expected ${expected}`);
+  }
+  let at = 0;
+  for (const layer of net.layers) {
+    layer.W.set(from.subarray(at, at + layer.W.length));
+    at += layer.W.length;
+    layer.b.set(from.subarray(at, at + layer.b.length));
+    at += layer.b.length;
+  }
+}
+
 /** Index of the largest output — the predicted class. */
 export function argmax(v: ArrayLike<number>): number {
   let best = 0;

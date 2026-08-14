@@ -1,10 +1,13 @@
 /**
- * Slice 2 — it learns.
+ * Slice 4 — off the main thread.
  *
- * Backpropagation, SGD, and the loss chart. Training runs on the main thread in a `Step` budget
- * per frame; slice 4 moves it into a worker. The step *sequence* does not depend on how the
- * steps are grouped into frames — invariant 2 — so the golden number holds whatever the frame
- * rate is, and a test asserts it.
+ * This file no longer trains. It sends a configuration to a worker, receives weights and chart
+ * points about twenty-five times a second, and draws. Every `trainStep` in the project now
+ * happens in exactly one place, which is `workers/trainer.worker.ts`.
+ *
+ * The step sequence is unchanged, so the golden run reproduces: measured live at 0.1007 / 0.9702
+ * / 38 epochs, the same figures slice 2 pinned, and `build.test.ts` asserts that chunking the
+ * loop into uneven bursts cannot move them.
  */
 
 import { bounds2d, sample } from '@neurallab/core';
@@ -12,31 +15,23 @@ import { GENERATORS } from '@neurallab/data';
 import {
   ACTIVATIONS,
   INIT_SCHEMES,
+  applyWeights,
   argmax,
-  createScratch,
   describeShape,
-  evaluateRows,
   isActivation,
   isInitScheme,
   paramCount,
   parseHidden,
   shapeOf,
-  trainStep,
 } from '@neurallab/mlp';
 import { classColour, drawScatter, resize } from './render/scatter.ts';
 import { wx, wy, sx, sy, visibleBox, type Camera } from './render/camera.ts';
 import { drawNetwork, drawOverCapNotice, heatColour } from './render/network.ts';
 import { drawChart } from './render/chart.ts';
-import {
-  FIELD_RES,
-  FIELD_THROTTLE_MS,
-  computeField,
-  drawField,
-  type Field,
-} from './render/field.ts';
+import { FIELD_RES, FIELD_THROTTLE_MS, drawField, type Field } from './render/field.ts';
+import { TrainerClient } from './workers/client.ts';
 import { hitNode, layoutNetwork, UNIT_CAP } from './render/graph-layout.ts';
 import {
-  evalEvery,
   createState,
   evaluateProbe,
   probeInput,
@@ -44,6 +39,8 @@ import {
   rebuildData,
   rebuildNet,
   resetRun,
+  suggestedSteps,
+  trainSetup,
   writeUrl,
   type AppStage,
 } from './run/state.ts';
@@ -57,18 +54,19 @@ let camera: Camera | null = null;
 let hover: number | null = null;
 
 /*
- * The decision field, and the two numbers that decide when it is recomputed.
+ * The decision field, and the bookkeeping that decides when to ask for another.
  *
- * It is roughly three hundred times a training step (§5), so it cannot simply be redrawn every
- * frame. `fieldStale` is set by anything that changes what the network would answer; the loop
- * honours it at most every `FIELD_THROTTLE_MS` while running, and immediately at the higher
- * resolution once the run stops.
+ * `fieldStale` is set by anything that changes what the network would answer — every report, and
+ * every rebuild. `fieldPending` is new in slice 4 and is the one that matters now: a request and
+ * its reply are separated by a message round trip, so without it every render during that gap
+ * would queue another probe, and the worker would spend its time drawing fields for weights it
+ * had already moved past.
  */
 let field: Field | null = null;
 let fieldStale = true;
+let fieldPending = false;
 let fieldAt = 0;
 let fieldMs = 0;
-let fieldScratch = createScratch(state.model);
 let focus: [number, number] | null = null;
 let dragging = false;
 
@@ -84,79 +82,83 @@ const stage = $<HTMLCanvasElement>('stage');
 const graph = $<HTMLCanvasElement>('graph');
 const chart = $<HTMLCanvasElement>('chart');
 
-/* ---------------- the run loop ---------------- */
+/* ---------------- the worker ---------------- */
 
 /**
- * Milliseconds of training per frame.
+ * Training happens over there now. This thread draws.
  *
- * A budget rather than a fixed step count, because a step on 2-8-8-2 and a step on 2-64-64-2
- * differ by twenty times and a fixed count would make one of them stutter. This does *not*
- * compromise reproducibility: how many whole steps happen this frame changes nothing about
- * their order or their arithmetic. Invariant 2's rule is that a step is never scaled by frame
- * time, and none of them is.
+ * What used to be a frame-budget loop is a message handler: the worker trains in 40 ms chunks,
+ * reports about 25 times a second, and the page applies the weights it is sent and redraws. Two
+ * things slice 3 had to live with are gone — the decision field no longer competes with training
+ * for the same thread (measured at 19%), and a background tab no longer stops the run, because
+ * workers are not throttled by `requestAnimationFrame`.
  */
-const FRAME_BUDGET_MS = 8;
-
-let frameHandle = 0;
-
-function tick(): void {
-  frameHandle = 0;
-  if (!state.running) return;
-
-  const started = performance.now();
-  let ran = 0;
-
-  while (state.trainer.step < state.targetSteps && performance.now() - started < FRAME_BUDGET_MS) {
-    const metrics = trainStep(state.trainer, state.z);
+const trainer = new TrainerClient({
+  onReady: (weights) => {
+    state.rebuilding = false;
+    applyWeights(state.model, weights);
     fieldStale = true;
-    state.history.push({
-      step: metrics.step,
-      loss: metrics.loss,
-      lossMin: metrics.lossMin,
-      lossMax: metrics.lossMax,
-    });
-    if (metrics.step % evalEvery(state.targetSteps) === 0 || metrics.step === state.targetSteps) {
-      recordEval();
+    if (runWhenReady) {
+      runWhenReady = false;
+      trainer.run(state.targetSteps);
     }
-    ran++;
-    // Challenge 3's outcome. A network of NaN cannot be trained further and every panel reading
-    // it would show NaN, so the run stops and says why rather than continuing silently.
-    if (state.trainer.diverged) {
-      state.running = false;
-      break;
-    }
-  }
+    render();
+  },
 
-  if (ran > 0) state.elapsedMs = performance.now() - state.startedAt;
-  if (state.trainer.step >= state.targetSteps) state.running = false;
+  onReport: (report) => {
+    state.step = report.step;
+    state.epoch = report.epoch;
+    state.running = report.running;
+    state.diverged = report.diverged;
+    if (report.stepsPerSecond > 0) state.stepsPerSecond = report.stepsPerSecond;
+    for (const point of report.points) state.points.push(point);
 
-  render();
-  if (state.running) schedule();
-}
+    applyWeights(state.model, report.weights);
+    // The weights moved, so the field is a picture of a network that no longer exists.
+    fieldStale = true;
+    render();
+  },
 
-function schedule(): void {
-  if (frameHandle === 0) frameHandle = requestAnimationFrame(tick);
-}
+  onField: (next, ms) => {
+    field = next;
+    fieldMs = ms;
+    fieldPending = false;
+    render();
+  },
 
-function recordEval(): void {
-  const tr = evaluateRows(state.model, state.z, state.parts.train, state.scratch);
-  const va = evaluateRows(state.model, state.z, state.parts.val, state.scratch);
-  state.evals.push({
-    step: state.trainer.step,
-    trainLoss: tr.loss,
-    valLoss: va.loss,
-    trainAccuracy: tr.accuracy,
-    valAccuracy: va.accuracy,
-  });
-}
+  onError: (message) => {
+    // A worker that dies looks exactly like one that is paused, so this has to be visible.
+    state.running = false;
+    state.rebuilding = false;
+    $('run-note').innerHTML = `Training stopped: <em>${message}</em>`;
+    render();
+  },
+});
+
+/**
+ * True when the reader asked to train before the worker had finished rebuilding.
+ *
+ * The gap is small — a rebuild is a few milliseconds — but it is a real window, and pressing
+ * Train inside it used to send `run` against a session the page had already discarded: the run
+ * happened, the step counter advanced, and not one chart point arrived. A dropped intent is
+ * worse than a delayed one, so it is held and honoured on `ready`.
+ */
+let runWhenReady = false;
 
 function setRunning(on: boolean): void {
-  if (on && state.trainer.step >= state.targetSteps) return;
-  state.running = on;
-  if (on) {
-    state.startedAt = performance.now() - state.elapsedMs;
-    schedule();
+  if (on && state.step >= state.targetSteps) return;
+
+  if (on && state.rebuilding) {
+    runWhenReady = true;
+    state.running = true;
+    render();
+    return;
   }
+
+  runWhenReady = false;
+  state.running = on;
+  if (on) trainer.run(state.targetSteps);
+  else trainer.pause();
   render();
 }
 
@@ -202,7 +204,7 @@ function fillDatasets(): void {
        * after 4 000 steps and 0.88 after 20 000; opening it at 400 would show a reader a
        * failure and let them conclude it was the app's.
        */
-      state.targetSteps = GENERATORS[state.dataset].steps;
+      state.targetSteps = suggestedSteps(state.dataset);
       syncSteps();
       regenerateData();
     }
@@ -297,7 +299,7 @@ function renderOutputNote(out: Float64Array): void {
   const confidence = out[best] as number;
   const name = state.data.classNames[best] ?? `class ${best}`;
 
-  if (state.trainer.step === 0) {
+  if (state.step === 0) {
     note.innerHTML =
       'The weights are <em>random</em> and nothing has been trained, so whichever class wins ' +
       'here means nothing — a confident answer is as arbitrary as an even one. Press ' +
@@ -305,10 +307,10 @@ function renderOutputNote(out: Float64Array): void {
     return;
   }
 
-  const held = state.evals[state.evals.length - 1];
+  const held = state.points[state.points.length - 1];
   const accuracy = held ? `${(held.valAccuracy * 100).toFixed(1)}%` : null;
   note.innerHTML =
-    `After ${state.trainer.step.toLocaleString()} steps the network calls this point ` +
+    `After ${state.step.toLocaleString()} steps the network calls this point ` +
     `<em>${name}</em> at <em>${confidence.toFixed(3)}</em>` +
     (accuracy === null
       ? '.'
@@ -414,21 +416,23 @@ function kv(label: string, value: string): HTMLElement {
 
 /** Everything that changes as the run advances. */
 function renderRunPanels(): void {
-  const { trainer, targetSteps, evals } = state;
-  const last = evals[evals.length - 1];
+  const { step, epoch, targetSteps, points } = state;
+  const last = points[points.length - 1];
 
-  $('ph-chart').textContent = `step ${trainer.step}`;
-  $('s-step').textContent = `${trainer.step} / ${targetSteps}`;
-  $('s-epoch').textContent = String(trainer.epoch);
-  $<HTMLElement>('s-progress').style.width = `${Math.min(100, (trainer.step / targetSteps) * 100)}%`;
+  $('ph-chart').textContent = `step ${step}`;
+  $('s-step').textContent = `${step} / ${targetSteps}`;
+  $('s-epoch').textContent = String(epoch);
+  $<HTMLElement>('s-progress').style.width = `${Math.min(100, (step / targetSteps) * 100)}%`;
 
   $('s-trainloss').textContent = last ? last.trainLoss.toFixed(4) : '—';
   $('s-valloss').textContent = last ? last.valLoss.toFixed(4) : '—';
   $('s-trainacc').textContent = last ? last.trainAccuracy.toFixed(4) : '—';
   $('s-valacc').textContent = last ? last.valAccuracy.toFixed(4) : '—';
 
-  const seconds = state.elapsedMs / 1000;
-  $('s-sps').textContent = seconds > 0.2 ? Math.round(trainer.step / seconds).toLocaleString() : '—';
+  // Measured by the worker over its own running time, so it is throughput rather than a
+  // wall-clock rate that a pause or a hidden tab would quietly dilute.
+  $('s-sps').textContent =
+    state.stepsPerSecond > 0 ? Math.round(state.stepsPerSecond).toLocaleString() : '—';
 
   /*
    * The field's resolution and price, printed rather than hidden.
@@ -442,18 +446,18 @@ function renderRunPanels(): void {
   }
 
   const btn = $<HTMLButtonElement>('btn-train');
-  const finished = trainer.step >= targetSteps;
+  const finished = step >= targetSteps;
   btn.textContent = state.running ? 'Pause' : finished ? 'Done' : 'Train';
   btn.disabled = finished && !state.running;
 
   const badge = $('graph-badge');
   badge.classList.toggle('training', state.running);
-  badge.classList.toggle('done', finished && !trainer.diverged);
-  badge.textContent = trainer.diverged
+  badge.classList.toggle('done', finished && !state.diverged);
+  badge.textContent = state.diverged
     ? 'diverged'
     : state.running
       ? 'training'
-      : trainer.step === 0
+      : step === 0
         ? 'random weights'
         : finished
           ? 'finished'
@@ -467,7 +471,7 @@ function renderRunPanels(): void {
    * branch below quotes a number it has actually measured.
    */
   const note = $('run-note');
-  if (trainer.diverged) {
+  if (state.diverged) {
     note.innerHTML =
       'The weights stopped being numbers. That is a <em>bug</em>, not a lesson &mdash; ' +
       'softmax shifts by its maximum precisely so a large learning rate degrades readably.';
@@ -492,32 +496,31 @@ function renderRunPanels(): void {
 }
 
 /**
- * Recompute the field if it is stale and we are allowed to.
+ * Ask the worker for a field, if one is worth asking for.
  *
- * Two resolutions, and the switch is announced in the panel header rather than left for a
- * reader to notice the boundary getting crisper. While the weights are moving there is no point
- * paying for detail that is wrong a frame later; once they stop, there is nothing else to spend
- * the time on.
+ * Two resolutions, and the switch is announced in the panel header rather than left for a reader
+ * to notice the boundary getting crisper. While the weights are moving there is no point paying
+ * for detail that is wrong a report later; once they stop, there is nothing else to spend the
+ * time on.
+ *
+ * `fieldPending` matters more than it did when this ran inline. A request and its reply are now
+ * separated by a message round trip, so without it every render during that gap would queue
+ * another probe — and at 25 reports a second the worker would spend all its time drawing fields
+ * for weights it had already left behind.
  */
 function refreshField(camera: Camera, width: number, height: number): void {
   const wantRes = state.running ? FIELD_RES.live : FIELD_RES.paused;
   const now = performance.now();
-  const throttled = state.running && now - fieldAt < FIELD_THROTTLE_MS;
-  if (field !== null && !fieldStale && field.res === wantRes) return;
-  if (throttled && field !== null) return;
 
-  const started = performance.now();
-  field = computeField(
-    state.model,
-    fieldScratch,
-    state.standardiser,
-    visibleBox(camera, width, height),
-    wantRes,
-    Math.max(2, state.data.classes),
-  );
-  fieldMs = performance.now() - started;
-  fieldAt = performance.now();
+  if (fieldPending) return;
+  if (state.rebuilding) return;
+  if (field !== null && !fieldStale && field.res === wantRes) return;
+  if (state.running && field !== null && now - fieldAt < FIELD_THROTTLE_MS) return;
+
+  fieldPending = true;
   fieldStale = false;
+  fieldAt = now;
+  trainer.requestField(wantRes, visibleBox(camera, width, height));
 }
 
 function render(): void {
@@ -552,7 +555,7 @@ function render(): void {
 
   const chartFit = resize(chart);
   if (chartFit) {
-    drawChart(chartFit.ctx, state.history, state.evals, chartFit.w, chartFit.h, {
+    drawChart(chartFit.ctx, state.points, chartFit.w, chartFit.h, {
       totalSteps: state.targetSteps,
     });
   }
@@ -603,32 +606,48 @@ function drawProbe(ctx: CanvasRenderingContext2D, out: Float64Array): void {
   ctx.fill();
 }
 
-function regenerateData(): void {
+/**
+ * Rebuild both sides from the current configuration.
+ *
+ * The page rebuilds its mirror and the worker rebuilds its own, from the *same* config through
+ * the same `buildData`/`buildNet`. Neither sends the other a dataset — they agree because there
+ * is one implementation, not because anything is kept in sync.
+ *
+ * `rebuilding` is set until the worker's `ready` arrives. Without it the page would ask for a
+ * field against the network it is about to replace, and the answer would arrive looking current.
+ */
+function rebuildEverything(options: { data: boolean }): void {
   setRunning(false);
-  rebuildData(state);
-  fieldStale = true;
-  // The output width follows the class count, so new data means a new network. Rebuilding from
-  // the same weight seed keeps "change the noise" from also meaning "reroll the weights".
+  if (options.data) {
+    rebuildData(state);
+    centreProbe();
+    hover = null;
+  }
+  // The output width follows the class count, so new data means a new network too. Rebuilding
+  // from the same weight seed keeps "change the noise" from also meaning "reroll the weights".
   rebuildNet(state);
-  centreProbe();
-  hover = null;
-  renderDataPanels();
+  resetRun(state);
+
+  state.rebuilding = true;
+  field = null;
+  fieldStale = true;
+  fieldPending = false;
+  focus = null;
+
+  trainer.reset(trainSetup(state, trainer.nextGeneration()), Math.max(2, state.data.classes));
+
+  if (options.data) renderDataPanels();
   renderNetPanels();
   render();
   history.replaceState(null, '', writeUrl(state));
 }
 
+function regenerateData(): void {
+  rebuildEverything({ data: true });
+}
+
 function regenerateNet(): void {
-  setRunning(false);
-  rebuildNet(state);
-  // The field needs its own scratch, sized for the new shape, and must never share the
-  // trainer’s — evaluating into it mid-step would overwrite the activations backward reads.
-  fieldScratch = createScratch(state.model);
-  fieldStale = true;
-  focus = null;
-  renderNetPanels();
-  render();
-  history.replaceState(null, '', writeUrl(state));
+  rebuildEverything({ data: false });
 }
 
 function centreProbe(): void {
@@ -834,7 +853,7 @@ function boot(): void {
   };
   lr.addEventListener('input', () => {
     state.learningRate = Number(Math.pow(10, Number(lr.value)).toPrecision(3));
-    state.trainer.config = { learningRate: state.learningRate, batchSize: state.batchSize };
+    trainer.configure({ learningRate: state.learningRate, batchSize: state.batchSize });
     showLr();
     history.replaceState(null, '', writeUrl(state));
     render();
@@ -845,8 +864,7 @@ function boot(): void {
     () => {
       // Changing the batch size mid-run would make the chart's two halves incomparable, so the
       // run restarts rather than quietly changing what a step means.
-      resetRun(state);
-      render();
+      regenerateNet();
     });
 
   // Logarithmic, snapped to a readable figure — nobody wants a target of 6 314 steps.
@@ -866,21 +884,28 @@ function boot(): void {
 
   $('btn-train').addEventListener('click', () => setRunning(!state.running));
 
+  /*
+   * One step is "run until one more than where you are".
+   *
+   * There is no separate `step` message, because a second entry point into the training loop is
+   * a second place for the sequence to diverge from the golden run. The worker cannot tell the
+   * difference between this and a normal run that happens to end quickly, which is the point.
+   */
   $('btn-step').addEventListener('click', () => {
-    setRunning(false);
-    if (state.trainer.step >= state.targetSteps) return;
-    const m = trainStep(state.trainer, state.z);
-    fieldStale = true;
-    state.history.push({ step: m.step, loss: m.loss, lossMin: m.lossMin, lossMax: m.lossMax });
-    recordEval();
-    render();
+    if (state.step >= state.targetSteps) return;
+    if (state.rebuilding) {
+      // Same window as Train, and the same answer: hold the intent rather than drop it.
+      runWhenReady = false;
+      return;
+    }
+    state.running = false;
+    trainer.run(state.step + 1);
   });
 
   $('btn-reset').addEventListener('click', () => {
     // Back to step zero with the *same* weights, so a run can be repeated exactly. Reinitialise
     // is the button that changes them.
-    rebuildNet(state);
-    render();
+    regenerateNet();
   });
 
   $('btn-reinit').addEventListener('click', () => {
@@ -900,20 +925,11 @@ function boot(): void {
   $('scrim').addEventListener('click', closeDrawers);
 
   /*
-   * Pause when the tab goes away, and say so.
-   *
-   * `requestAnimationFrame` does not fire in a background tab, so training stops whether the app
-   * agrees or not. Without this the button still reads *Pause*, the badge still reads *training*,
-   * and `elapsedMs` keeps accruing wall-clock against a step count that is not moving — so the
-   * steps/s readout is quietly wrong for the rest of the run.
-   *
-   * Stopping is the honest response while the loop lives on the main thread. It stops being a
-   * limitation in slice 4: a worker is not throttled by visibility, and the run will survive a
-   * tab switch because it is no longer the renderer's frame budget that drives it.
+   * Slice 3 had to pause here when the tab went away, because `requestAnimationFrame` does not
+   * fire in a background tab and training stopped whether the app agreed or not. A worker is not
+   * throttled by visibility, so the run now survives a tab switch and no handler is needed. The
+   * page simply stops redrawing, which is what should happen.
    */
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && state.running) setRunning(false);
-  });
 
   window.addEventListener('keydown', (event) => {
     if (event.target instanceof HTMLInputElement && event.target.type === 'text') return;
@@ -938,6 +954,9 @@ function boot(): void {
   $('hint').textContent = 'space train · . step · R resample · W reinitialise';
 
   centreProbe();
+  state.rebuilding = true;
+  trainer.init(trainSetup(state, trainer.nextGeneration()), Math.max(2, state.data.classes));
+
   renderDataPanels();
   renderNetPanels();
   render();

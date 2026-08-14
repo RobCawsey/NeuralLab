@@ -8,10 +8,12 @@ export {
 } from './activations.ts';
 export {
   INIT_SCHEMES,
+  applyWeights,
   argmax,
   createNet,
   createScratch,
   describeShape,
+  flattenWeights,
   forward,
   initialise,
   isInitScheme,
@@ -19,6 +21,7 @@ export {
   paramCount,
   parseHidden,
   shapeOf,
+  weightCount,
   type Dense,
   type InitScheme,
   type LossKind,

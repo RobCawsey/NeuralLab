@@ -14,9 +14,9 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 3 of 16 — data and boundaries.** Six datasets, and the decision field drawn underneath
-them: what the network would answer at every point on the plane, repainted as it learns.
-Validation points are hollow, so you can see which ones it was never shown.
+**Slice 4 of 16 — off the main thread.** Training runs in a Web Worker at around 12 000 steps a
+second, so the decision field no longer competes with it and a run survives switching tabs. Six
+datasets, a live boundary, and a loss chart that shows the real spread of each batch.
 
 ## Getting started
 
@@ -28,7 +28,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 134 tests, ~3.5 s
+npm test       # 145 tests, ~3.5 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the golden run, plus challenges 1 and 3, all asserted

@@ -753,6 +753,25 @@ type FromWorker =
     pause/step/trace protocol has exactly one implementation and the stepper does not become two
     different mechanisms wearing the same button.</p>
 
+    <div class="risk" style="margin-bottom:16px"><span class="lbl">Amendment &middot; slice 4 &middot; built and measured</span>
+      <p><strong>Moving training off the main thread is worth 88% on the same run.</strong>
+      Spirals, 20 000 steps at 2-16-16-2: <strong>6 377 steps/s</strong> on the main thread in
+      slice 3 against <strong>11 960</strong> in the worker. Moons at the same shape reaches
+      28 500. The decision field costs what it always did, but it now costs the worker's time
+      rather than the renderer's, so nothing on screen stutters while it is drawn.</p>
+      <p><strong>Two message-ordering bugs, and both were races rather than logic.</strong> A
+      rebuild does not cancel messages already in flight: pressing Train during one sent
+      <code>run</code> against a session the page had discarded, and a report arriving after one
+      applied the previous network's weights to the rebuilt mirror. The second threw
+      <code>weight buffer is 114, expected 354</code> only because the architecture had changed
+      as well &mdash; a rebuild that changes only the dataset keeps the shape, and there it would
+      have applied cleanly and been silently wrong. <strong>Every session carries a generation
+      now, echoed on every message.</strong> This is the rule the stepper's trace has to follow
+      in slice 5.</p>
+      <p>The protocol table above is otherwise as built, including the copy/transfer split: weights
+      are copied both ways, and the field is the one payload that transfers.</p>
+    </div>
+
     <div class="risk"><span class="lbl">Consequence worth stating</span>
       <p>Reports at 20 Hz mean the loss chart is sampled, not complete — at 4000 steps/s it draws
       one point in two hundred. <strong>Per-step loss is therefore accumulated in the worker and

@@ -1,11 +1,17 @@
 /**
- * The loss chart.
+ * The loss chart: two lines and a band.
  *
- * Three series and one band, and the band is the point. Minibatch loss is very noisy — on two
- * moons a single batch of 16 swings between 0.02 and 0.7 while the network is learning steadily
- * — so drawing one sampled value per step as a line invents smoothness the run did not have.
- * The band shows the spread within each batch; the line is the mean.
+ * The band is the point. Minibatch loss is very noisy — on two moons a single batch of 16 swings
+ * between 0.02 and 0.7 while the network is learning steadily — so drawing one sampled value per
+ * point as a line invents smoothness the run did not have. The band is the real spread of every
+ * step the point covers; the line is their mean.
+ *
+ * Slice 2 kept two arrays sampled at different rates and reconciled them here. The worker now
+ * produces both halves of a point at the same moment, so there is one array and nothing to
+ * reconcile.
  */
+
+import type { RunPoint } from '../workers/protocol.ts';
 
 const GRID = '#1f1e2b';
 const AXIS = '#2c2a3a';
@@ -14,33 +20,13 @@ const AMBER = '#e9a13b';
 const CYAN = '#4ea8c4';
 const BAD = '#d9625c';
 
-export interface HistoryPoint {
-  readonly step: number;
-  /** Mean loss over the batch this step trained on. */
-  readonly loss: number;
-  readonly lossMin: number;
-  readonly lossMax: number;
-}
-
-/** A full-dataset measurement, taken every `evalEvery` steps rather than every step. */
-export interface EvalPoint {
-  readonly step: number;
-  readonly trainLoss: number;
-  readonly valLoss: number;
-  readonly trainAccuracy: number;
-  readonly valAccuracy: number;
-}
-
 export interface ChartOptions {
-  /** Draw accuracy (0–1, higher better) instead of loss. */
-  readonly accuracy?: boolean;
   readonly totalSteps?: number;
 }
 
 export function drawChart(
   ctx: CanvasRenderingContext2D,
-  history: readonly HistoryPoint[],
-  evals: readonly EvalPoint[],
+  points: readonly RunPoint[],
   width: number,
   height: number,
   opts: ChartOptions = {},
@@ -50,37 +36,28 @@ export function drawChart(
   const pad = { left: 30, right: 8, top: 8, bottom: 14 };
   const w = Math.max(1, width - pad.left - pad.right);
   const h = Math.max(1, height - pad.top - pad.bottom);
+  const last = points[points.length - 1];
 
-  const lastStep = Math.max(
-    1,
-    opts.totalSteps ?? 0,
-    history.length > 0 ? (history[history.length - 1] as HistoryPoint).step : 0,
-  );
+  const lastStep = Math.max(1, opts.totalSteps ?? 0, last?.step ?? 0);
 
   /*
-   * The vertical range is taken from the data, not fixed.
+   * The vertical range comes from the data, not a fixed 0–1.
    *
-   * A fixed 0–1 axis hides challenge 3 completely: a destroyed network sits at a loss of 13.8
-   * and would draw as a flat line pinned to the top of the chart, which reads as "no data"
-   * rather than "catastrophe". The ceiling is printed on the axis so the rescale is visible.
+   * A fixed axis hides challenge 3 completely: a destroyed network sits at a loss of 13.8 and
+   * would draw as a flat line pinned to the top, which reads as "no data" rather than
+   * "catastrophe". The ceiling is printed on the axis so the rescale is visible.
    */
-  let top = opts.accuracy ? 1 : 0.001;
-  if (!opts.accuracy) {
-    for (const p of history) if (Number.isFinite(p.lossMax)) top = Math.max(top, p.lossMax);
-    for (const e of evals) {
-      if (Number.isFinite(e.trainLoss)) top = Math.max(top, e.trainLoss);
-      if (Number.isFinite(e.valLoss)) top = Math.max(top, e.valLoss);
-    }
-    top *= 1.08;
+  let top = 0.001;
+  for (const p of points) {
+    if (Number.isFinite(p.lossMax)) top = Math.max(top, p.lossMax);
+    if (Number.isFinite(p.trainLoss)) top = Math.max(top, p.trainLoss);
+    if (Number.isFinite(p.valLoss)) top = Math.max(top, p.valLoss);
   }
+  top *= 1.08;
 
   const X = (step: number): number => pad.left + (step / lastStep) * w;
-  const Y = (v: number): number => {
-    const t = Math.max(0, Math.min(1, v / top));
-    return pad.top + (1 - t) * h;
-  };
+  const Y = (v: number): number => pad.top + (1 - Math.max(0, Math.min(1, v / top))) * h;
 
-  // grid
   ctx.lineWidth = 1;
   ctx.font = '9px "Cascadia Mono", Consolas, monospace';
   ctx.textAlign = 'right';
@@ -96,24 +73,23 @@ export function drawChart(
     ctx.fillText(fmt(top * (1 - i / 4)), pad.left - 4, y);
   }
 
-  if (history.length === 0 && evals.length === 0) {
+  if (points.length === 0) {
     ctx.fillStyle = LABEL;
     ctx.textAlign = 'center';
     ctx.fillText('nothing trained yet', pad.left + w / 2, pad.top + h / 2);
     return;
   }
 
-  if (!opts.accuracy && history.length > 1) {
-    // The batch spread, as a filled band between min and max.
+  if (points.length > 1) {
     ctx.beginPath();
-    for (let i = 0; i < history.length; i++) {
-      const p = history[i] as HistoryPoint;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i] as RunPoint;
       const y = Y(clamp(p.lossMax));
       if (i === 0) ctx.moveTo(X(p.step), y);
       else ctx.lineTo(X(p.step), y);
     }
-    for (let i = history.length - 1; i >= 0; i--) {
-      const p = history[i] as HistoryPoint;
+    for (let i = points.length - 1; i >= 0; i--) {
+      const p = points[i] as RunPoint;
       ctx.lineTo(X(p.step), Y(clamp(p.lossMin)));
     }
     ctx.closePath();
@@ -121,52 +97,43 @@ export function drawChart(
     ctx.fill();
   }
 
-  if (opts.accuracy) {
-    series(ctx, evals, X, Y, (e) => e.trainAccuracy, AMBER, 2);
-    series(ctx, evals, X, Y, (e) => e.valAccuracy, CYAN, 1.4);
-  } else {
-    series(ctx, evals, X, Y, (e) => clamp(e.trainLoss), AMBER, 2);
-    series(ctx, evals, X, Y, (e) => clamp(e.valLoss), CYAN, 1.4);
-  }
+  series(ctx, points, X, Y, (p) => clamp(p.trainLoss), AMBER, 2);
+  series(ctx, points, X, Y, (p) => clamp(p.valLoss), CYAN, 1.4);
 
-  // The last point, marked. Where the run is *now* is the thing being read most often.
-  const last = evals[evals.length - 1];
+  // Where the run is *now* is the thing read most often, so it gets a mark.
   if (last) {
-    const v = opts.accuracy ? last.trainAccuracy : clamp(last.trainLoss);
     ctx.beginPath();
-    ctx.arc(X(last.step), Y(v), 3, 0, Math.PI * 2);
+    ctx.arc(X(last.step), Y(clamp(last.trainLoss)), 3, 0, Math.PI * 2);
     ctx.fillStyle = AMBER;
     ctx.fill();
 
     // Validation above training is what challenge 7 is read from, so it gets a colour rather
     // than being left for the reader to notice.
-    const overfitting = !opts.accuracy && last.valLoss > last.trainLoss * 1.25;
+    const overfitting = last.valLoss > last.trainLoss * 1.25;
     ctx.beginPath();
-    ctx.arc(X(last.step), Y(opts.accuracy ? last.valAccuracy : clamp(last.valLoss)), 3, 0, Math.PI * 2);
+    ctx.arc(X(last.step), Y(clamp(last.valLoss)), 3, 0, Math.PI * 2);
     ctx.fillStyle = overfitting ? BAD : CYAN;
     ctx.fill();
   }
 }
 
-function series<T>(
+function series(
   ctx: CanvasRenderingContext2D,
-  points: readonly T[],
+  points: readonly RunPoint[],
   X: (step: number) => number,
   Y: (v: number) => number,
-  read: (p: T) => number,
+  read: (p: RunPoint) => number,
   colour: string,
   lineWidth: number,
 ): void {
   if (points.length < 2) return;
   ctx.beginPath();
   for (let i = 0; i < points.length; i++) {
-    const p = points[i] as T & { step: number };
+    const p = points[i] as RunPoint;
     const v = read(p);
     if (!Number.isFinite(v)) continue;
-    const x = X(p.step);
-    const y = Y(v);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    if (i === 0) ctx.moveTo(X(p.step), Y(v));
+    else ctx.lineTo(X(p.step), Y(v));
   }
   ctx.strokeStyle = colour;
   ctx.lineWidth = lineWidth;
