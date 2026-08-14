@@ -513,9 +513,11 @@ interface Net {
 <pre>interface Som {
   readonly cols: number; readonly rows: number;
   readonly dim: number;                <i>// input dimensionality</i>
-  readonly topology: <b>'rect' | 'hex'</b>;
+  readonly topology: <b>'hex' | 'rect'</b>;   <i>// hex is the default — see below</i>
   W: Float32Array;                     <i>// cols * rows * dim, node-major</i>
   hits: Int32Array;                    <i>// samples won, per node</i>
+  <i>/** Neighbour indices per node, built once per topology. Never derived inline. */</i>
+  neighbours: <b>Int32Array</b>;             <i>// cols * rows * 6, -1 where the lattice ends</i>
 }
 
 interface Schedule {
@@ -530,6 +532,21 @@ interface Schedule {
     <em>in the lattice</em>, not in the data. That distinction is the whole algorithm and the UI
     is built to make it unmissable — §8's SOM stepper draws the lattice neighbourhood and the input
     space side by side.</p>
+
+    <div class="pick"><strong>The lattice is hexagonal by default, and that is not decoration.</strong>
+    On a rectangular lattice a node has four neighbours at distance 1 and four more at
+    &radic;2, so <code>h(d,&nbsp;t)</code> pulls harder along the axes than along the diagonals and
+    the map contracts anisotropically. Hex gives six neighbours all at distance 1 and a genuinely
+    circular neighbourhood. Rectangular stays selectable, because putting the two side by side is
+    itself a lesson.</div>
+
+    <p><strong>The consequence to design around: lattice distance is not Euclidean on
+    (col,&nbsp;row).</strong> Offset rows have to be converted to axial coordinates before
+    measuring, and getting that wrong makes every neighbourhood subtly the wrong shape on
+    alternate rows — a map that still trains, still looks plausible, and is quietly not a SOM.
+    That is why <code>neighbours</code> is a table built once per topology and tested against a
+    hand-counted 3&nbsp;&times;&nbsp;3, rather than a distance computed inline wherever it is
+    needed.</p>
 
     <p>Both decays are written against an explicit <code>steps</code> horizon rather than a
     per-step multiplier. A multiplier makes "how fast does it cool" depend on how long you happen
@@ -744,8 +761,10 @@ type FromWorker =
 
     <div class="grid g3" style="max-width:none">
       <div class="card"><h4>Guided</h4><p class="k">the first ten seconds</p>
-        <p>Four steps: pick data, pick a shape, watch it learn, see what changed. No hyperparameters
-        at all. Ends by replaying the network's very first guess against its last one.</p></div>
+        <p><strong>One flow per network</strong>, four steps each, no hyperparameters at all. The
+        perceptron's: pick data, pick a shape, watch it learn, see what changed — ending by
+        replaying its very first guess against its last. The map's: pick data, watch a flat sheet
+        fold into it, see what it kept apart, label it.</p></div>
       <div class="card"><h4>Explorer</h4><p class="k">the working surface</p>
         <p>Full controls, the diagnostics column, the decision field, the challenge track. This is
         where somebody spends an hour.</p></div>
@@ -1195,12 +1214,12 @@ type FromWorker =
       <tr><td class="num">3</td><td>Data and boundaries</td><td>six datasets, the decision field, train/val split</td><td><code>data</code>, <code>ImageData</code> blit</td></tr>
       <tr><td class="num">4</td><td>Off the main thread</td><td>4000 steps/s with a smooth 60&nbsp;fps chart; pause, step, throughput readout</td><td>worker, protocol, throttled reports</td></tr>
       <tr><td class="num">5</td><td><strong>The stepper</strong></td><td>backprop paused between operators on one real sample</td><td><code>trace:true</code>, identity test</td></tr>
-      <tr><td class="num">6</td><td>Guided first run</td><td>four steps, no hyperparameters, first-guess vs last</td><td>stages, presets, branching afterwords</td></tr>
+      <tr><td class="num">6</td><td>Guided first run</td><td>four steps, no hyperparameters, first-guess vs last</td><td>stages, presets, branching afterwords, the flow <em>as data</em></td></tr>
       <tr><td class="num">7</td><td>Diagnostics</td><td>gradient flow, activation and weight histograms, dead-unit count; Adam and momentum</td><td>optimisers, <code>Diagnostics</code></td></tr>
       <tr><td class="num">8</td><td>Architecture editor</td><td>add and remove layers live, with validation that explains why</td><td>editor panel, param budget</td></tr>
-      <tr><td class="num">9</td><td><strong>Kohonen kernel</strong></td><td>a 12&times;12 map ordering itself on the colour cube</td><td><code>som</code>, lattice, hits, <strong>golden QE</strong></td></tr>
+      <tr><td class="num">9</td><td><strong>Kohonen kernel</strong></td><td>a 12&times;12 <em>hex</em> map ordering itself on the colour cube</td><td><code>som</code>, axial coords, neighbour table, hits, <strong>golden QE</strong></td></tr>
       <tr><td class="num">10</td><td>Reading a map</td><td>U-matrix, component planes, labels, QE and TE charted together</td><td>the SOM instrument column</td></tr>
-      <tr><td class="num">11</td><td>The SOM stepper</td><td>BMU and neighbourhood, lattice and input space side by side</td><td>SOM trace, input-space view</td></tr>
+      <tr><td class="num">11</td><td>The SOM stepper<br><span style="font-size:13px;color:var(--ink-3)">and the second guided flow</span></td><td>BMU and neighbourhood side by side with input space; a guided first run for the map</td><td>SOM trace, input-space view, <strong>second flow, same frame</strong></td></tr>
       <tr><td class="num">12</td><td><strong>3D</strong></td><td>a loss surface you can orbit, and a lattice folding through its data</td><td>Three.js chunk, filter-normalised directions</td></tr>
       <tr><td class="num">13</td><td>Challenge track</td><td>twelve cards, four phases, concept dots</td><td>challenge data, progress in <code>localStorage</code></td></tr>
       <tr><td class="num">14</td><td>Help</td><td>full-screen reference generated from the app's own data</td><td>help content, per-panel <code>?</code></td></tr>
@@ -1222,6 +1241,13 @@ type FromWorker =
       Both halves share the chassis, the chart, the worker protocol and the stepper frame. Building
       the second network second means the shared parts are shaped by one real client before they
       acquire a second, rather than being designed for two hypothetical ones.</li>
+      <li><strong>The guided flow is built twice, and the second time is slice 11.</strong> Both
+      networks get one — §13 — but a flow can only be built once there is something to guide
+      somebody through, and the map's third step <em>is</em> the U-matrix. So slice 6 builds the
+      frame plus the perceptron's flow, and slice 11 adds the map's beside the SOM stepper. The
+      frame takes the flow as data from the first version rather than being generalised later:
+      retrofitting a second client onto a hardcoded first one is how the copy ends up duplicated,
+      and duplicated copy is the exact risk §13 named when this was still an open question.</li>
       <li><strong>3D is slice 12, after both networks work.</strong> It is a view. If it arrived
       earlier it would grow features, and §7's rule would already be broken.</li>
     </ul>
@@ -1354,19 +1380,68 @@ npm run som          <i># headless SOM: 6000 steps, prints QE, TE and an ASCII U
 
     <h3>Open questions</h3>
     <ul class="list">
-      <li><strong>Hex topology, or rectangular only?</strong> Hex is the better lattice and the
-      standard in the literature, and it costs a different neighbour table plus an offset row in
-      every drawing routine. Currently specified as an option; if slice 9 runs long it becomes
-      rectangular-only and hex is a later slice.</li>
-      <li><strong>Does the guided flow cover both networks, or only the MLP?</strong> Two guided
-      flows is two sets of copy to keep true. The current answer is one flow, on the MLP, with the
-      SOM reached through challenge&nbsp;9 — but a reader who came for Kohonen maps will find that
-      annoying, and the honest test is to watch one.</li>
       <li><strong>Is the epoch scrubber worth its snapshot ring?</strong> Keeping weights every 20th
       report at 106&nbsp;kB a snapshot is 5&nbsp;MB for a long run on the largest network. Probably
       fine, probably needs a cap, and the cap should be stated in steps rather than megabytes so a
       reader can understand what they lose.</li>
     </ul>
+
+    <h3 style="margin-top:32px">Answered</h3>
+
+    <div class="pick"><strong>Hex, and it is the default.</strong> Rectangular stays as an option
+    because two topologies side by side is itself a lesson — but a hex lattice is what the
+    literature means by a SOM, and the reason is not aesthetic. On a rectangular lattice a node
+    has four neighbours at distance 1 and four more at distance &radic;2, so the neighbourhood
+    function is anisotropic: the map shrinks faster along the axes than along the diagonals. Hex
+    gives six neighbours all at distance 1, and <code>h(d,&nbsp;t)</code> is then genuinely
+    circular. Since §3's whole claim is that the neighbourhood is a distance <em>in the
+    lattice</em>, the lattice should be one where that distance behaves.</div>
+
+    <p>The cost is real and lands in four places, all in slice&nbsp;9 or 10:</p>
+    <ul class="list">
+      <li><strong>Lattice distance stops being Euclidean on (col,&nbsp;row).</strong> Offset
+      coordinates have to convert to axial before measuring, or every neighbourhood is subtly the
+      wrong shape on alternate rows. This is the single most likely bug in <code>packages/som</code>
+      and it is the reason the neighbour table is built once, per topology, and tested against a
+      hand-counted 3&nbsp;&times;&nbsp;3 rather than derived inline.</li>
+      <li><strong>Every drawing routine gains an offset row</strong> — the lattice, the U-matrix,
+      the component planes and the hit map. They already share one blit path, so this is one
+      change rather than four, but hexagons are not <code>ImageData</code> rectangles and the
+      U-matrix loses its cheapest implementation.</li>
+      <li><strong>Topographic error's neighbour test changes</strong>, and §13 already flags that
+      its edge nodes are the easy thing to get wrong. Hex makes the boundary cases different
+      rather than harder: a corner node has three neighbours, an edge node four.</li>
+      <li><strong>The 3D folding view</strong> draws hex connectivity, which is six edges per node
+      instead of four — 30% more line work and no structural change.</li>
+    </ul>
+
+    <div class="pick" style="margin-top:22px"><strong>Two guided flows, and the second one arrives
+    at slice&nbsp;11 rather than slice&nbsp;6.</strong> A reader who came for Kohonen maps and is
+    handed a perceptron tutorial has been told their question is the less important one, which is
+    the opposite of what §1 claims about the two halves. So both get one.</div>
+
+    <p>The slice order changes to match, and the reason is that a guided flow can only be built
+    once there is something to guide someone <em>through</em>:</p>
+    <ul class="list">
+      <li><strong>Slice 6 builds the guided framework and the MLP flow.</strong> Four steps, the
+      step list, the branching afterwords, the before-and-after replay. The framework takes the
+      flow as data from the start rather than being generalised later, because retrofitting a
+      second client onto a hardcoded first one is how the copy ends up duplicated.</li>
+      <li><strong>Slice 11 adds the SOM flow</strong>, beside the SOM stepper — the first point at
+      which the lattice (slice&nbsp;9) and the U-matrix (slice&nbsp;10) both exist. Its four steps
+      are: pick some data, watch a flat sheet fold into it, see which regions the map kept apart,
+      and label it. Step&nbsp;3 is the U-matrix and it is the whole reason the flow is worth
+      having.</li>
+      <li><strong>The two flows share the frame and nothing else.</strong> One `GuidedFlow` type,
+      two arrays of steps, one renderer. §6's rule that afterwords are data which branches on the
+      outcome is what makes that possible — a flow is already data, so a second one is a second
+      value rather than a second implementation.</li>
+    </ul>
+
+    <p>The cost that was worrying: <em>two sets of copy to keep true</em>. It is unchanged and it
+    is the thing to watch. The defence is the same one §6 applies to the challenge cards —
+    afterwords are written against live values, and a test renders every branch of both flows
+    against synthetic outcomes.</p>
   </div>
 </section>
 

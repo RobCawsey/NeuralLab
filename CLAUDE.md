@@ -140,6 +140,35 @@ its own content and draws straight over the next panel's header, while `overflow
 column clips the evidence so `scrollHeight` still reports a clean fit. Found while building the
 design document's mockups, fixed in the app's CSS before the app could have it.
 
+## Two open questions are now decided
+
+Both were listed in §13 as open. They are answered, and the design document records the reasoning
+and the cost.
+
+**The SOM lattice is hexagonal, and hex is the default.** Rectangular stays selectable because two
+topologies side by side is itself a lesson. The reason is not aesthetic: on a rectangular lattice a
+node has four neighbours at distance 1 and four more at √2, so `h(d,t)` pulls harder along the axes
+than the diagonals and the map contracts anisotropically. Hex gives six neighbours all at distance
+1. Since §3's whole claim is that the neighbourhood is a distance *in the lattice*, the lattice
+should be one where that distance behaves.
+
+> **The bug to design around:** lattice distance is **not** Euclidean on `(col, row)`. Offset rows
+> must convert to axial coordinates before measuring. Get it wrong and every neighbourhood is
+> subtly the wrong shape on alternate rows — a map that still trains, still looks plausible, and is
+> quietly not a SOM. `Som.neighbours` is therefore a table built **once per topology** and tested
+> against a hand-counted 3×3, never a distance computed inline.
+
+**Both networks get a guided flow, and the map's arrives at slice 11, not slice 6.** A reader who
+came for Kohonen maps and is handed a perceptron tutorial has been told their question is the less
+important one — the opposite of what §1 claims. But a flow can only be built once there is
+something to guide somebody *through*, and the map's third step *is* the U-matrix (slice 10).
+
+So slice 6 builds the frame plus the perceptron's flow; slice 11 adds the map's beside the SOM
+stepper. **The frame takes the flow as data from the first version**, not generalised later —
+retrofitting a second client onto a hardcoded first one is how the copy ends up duplicated, and
+duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
+arrays of steps, one renderer, and a test that renders every branch of both.
+
 ### Next: slice 3 — "Data and boundaries"
 
 Six 2D generators, the decision field as an `ImageData` blit, and the train/validation split made
@@ -207,7 +236,7 @@ argument, including why shipping our own `exp` was rejected.
 packages/core/   pure TS — Rng, Dataset, split, standardiser, bounds
 packages/data/   pure TS — dataset generators (moons, xor; the rest in slice 3)
 packages/mlp/    pure TS — activations, layers, forward, backward, SGD, training loop
-packages/som/    slice 9 — lattice, bmu, neighbourhood, schedules, u-matrix
+packages/som/    slice 9 — hex lattice (axial coords), bmu, neighbourhood, schedules, u-matrix
 apps/web/        Vite app — canvas render, later workers and Three.js
 server/          slice 15 — ASP.NET Core + SQLite
 docs/            the technical design document
