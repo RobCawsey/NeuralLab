@@ -566,6 +566,48 @@ interface Schedule {
       feature varies across the map. This is how a 13-dimensional map becomes readable.</li>
     </ul>
 
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 9 &middot; built and measured</span>
+      <p><strong>Quantisation error does not fall below its random-init reading on the colour
+      cube, and that is measured, not a bug.</strong> <code>createSom</code> draws weights uniform
+      in <code>[0,&nbsp;1)</code>, deliberately matching the colour cube's own range so a fresh
+      map starts inside the data rather than having to travel to it. That choice means a random
+      map is 144 points drawn from the <em>exact</em> data distribution — an unusually strong
+      quantiser with no structure behind it at all: topographic error at step 0 measures 0.97,
+      essentially every sample's best and second-best nodes unrelated. Training pulls the lattice
+      into a coherent sheet, which costs some of that raw quantising power in exchange for the
+      property a SOM actually promises. Sampling QE at nine checkpoints across a 3 000-step run
+      shows the real shape of it: a spike to 0.36 as soon as topology starts to matter, then a
+      monotonic fall to 0.12 — "goes down as the map fits the data" is true, just measured from
+      after the initial reorganisation rather than from the random start. The golden test pins QE
+      from step 300 rather than step 0 for exactly this reason, and separately asserts the random
+      baseline's own topographic error, so the exception is checked rather than quietly assumed
+      away.</p>
+      <p><strong>The exponential schedule needed retuning once this was visible.</strong>
+      <code>v0&nbsp;&middot;&nbsp;e&#8315;&sup1;</code> remaining at the horizon — the textbook
+      constant — measured visibly under-converged: a 12&times;12 map still had a <em>higher</em>
+      QE after 3 000 steps than its own random init, because &sigma; was still 2.2 hex-units wide
+      at the final step, wide enough to keep the lattice smoothed together rather than letting
+      individual nodes settle onto the data. Retuned to
+      <code>v0&nbsp;&middot;&nbsp;e&#8315;&sup3;</code> (about 5% remaining), which is what the
+      golden numbers are pinned against. The linear and inverse decays were unaffected — linear
+      already reaches its floor at the horizon by construction, and inverse's <code>v0/2</code> at
+      the horizon was never the textbook constant to begin with.</p>
+      <p><strong>A step is one sample, not a minibatch</strong> — the MLP batches because a
+      gradient is an average over rows, and a SOM update has no such average to take. Samples are
+      drawn <em>with replacement</em>, the classical Kohonen loop, rather than a shuffled epoch:
+      tying "how many times has this row been seen" to the row count would fight the schedule's
+      own <code>steps</code> horizon. Invariant 2's actual rule — training advances in whole, fixed
+      units of work — holds regardless of what the unit is.</p>
+      <p><strong>Built pure and headless, exactly as far as slice 9 was scoped.</strong> No app
+      wiring, no Explorer panel, no network switch yet — <code>net-som</code>'s disabled button
+      is corrected to say so rather than left naming a slice number now in the past. <code>npm run
+      som</code> plays the role <code>scripts/train.ts</code> played through slice 2: a golden run
+      pinned in a test, replayed headlessly, printed where a reader can see it — here as two
+      12&times;12 grids of real 24-bit terminal colour, before training (scattered noise) and
+      after (a smooth gradient across the lattice), the same evidentiary role
+      <code>scripts/data.ts</code>'s ASCII scatter has played since slice 0.</p>
+    </div>
+
     <h3>Datasets</h3>
     <p><code>packages/data</code> generates everything from a seed; nothing is fetched at runtime
     except the digits blob.</p>

@@ -15,7 +15,8 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "data": "node --experimental-strip-types scripts/data.ts",
-    "train": "node --experimental-strip-types scripts/train.ts"
+    "train": "node --experimental-strip-types scripts/train.ts",
+    "som": "node --experimental-strip-types scripts/som.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

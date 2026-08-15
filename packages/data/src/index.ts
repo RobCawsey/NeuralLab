@@ -11,3 +11,4 @@ export {
   type GeneratorOptions,
   type MoonsOptions,
 } from './generators.ts';
+export { colourCube, type ColourCubeOptions } from './som.ts';

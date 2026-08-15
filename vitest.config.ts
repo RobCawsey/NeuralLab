@@ -11,6 +11,7 @@ export default defineConfig({
       '@neurallab/core': src('./packages/core/src/index.ts'),
       '@neurallab/data': src('./packages/data/src/index.ts'),
       '@neurallab/mlp': src('./packages/mlp/src/index.ts'),
+      '@neurallab/som': src('./packages/som/src/index.ts'),
     },
   },
   test: {

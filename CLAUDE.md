@@ -18,6 +18,67 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 9 — "Kohonen kernel".** `packages/som`: the hex lattice, axial coordinates, BMU, the
+neighbourhood function, three decay schedules, quantisation error, topographic error, the
+U-matrix, and a golden run — a 12×12 hex map ordering itself on the colour cube, printed as real
+terminal colour by `npm run som`. Pure, headless, no app wiring; the disabled Kohonen button's
+tooltip is corrected rather than left promising a slice number this one still doesn't deliver.
+265 tests.
+
+**Two distinct notions of "neighbour" live in `packages/som/src/lattice.ts`, and conflating them
+is the second-easiest way to get this package wrong.** `latticeDistance` is continuous and
+answers `h(d, t)`'s question — every node in the lattice has one, however large. `neighbours` is
+discrete and answers "which nodes does this one touch" — used for topographic error and the
+U-matrix. For hex the two agree (distance 1 in the metric is exactly the six neighbours), but for
+rect they deliberately don't: the design document is explicit that a rect node's four diagonal
+cells at distance √2 are *not* lattice neighbours for TE or the U-matrix, even though
+`latticeDistance` sees them as close. Getting this backwards would still train something that
+looks plausible, which is exactly the failure mode the design document warns about.
+
+**The neighbour table is tested against a 3×3 hand count, worked out on paper before any code
+ran — not trusted after the fact.** Odd rows are shoved right by half a hex ("odd-r"), which means
+a shifted row's diagonal neighbours land at the *same* column and the *next* column over in the
+row above and below, not one column either side as Euclidean intuition suggests. The derivation is
+in `lattice.test.ts`'s comments, not just its assertions, so a reader can check the geometry
+without re-deriving it: centre `(1,1)` touches all six neighbours of a 3×3 grid, corner `(0,0)`
+touches exactly two. All eleven tests passed on the first run against numbers worked out by hand,
+which is the point of doing it that way rather than asserting whatever the code happened to
+produce.
+
+**Quantisation error does not fall below its random-init reading on the colour cube, and that
+took a probe script to understand rather than a guess.** `createSom` draws weights uniform in
+`[0, 1)` specifically to match the colour cube's own range — which means a fresh random map is
+144 points drawn from the *exact* data distribution, an unusually strong quantiser with zero
+structure behind it (topographic error 0.97 at step 0: essentially every sample's best and
+second-best nodes are unrelated). Training pulls the lattice into a coherent sheet, which costs
+some of that raw quantising power in exchange for the property a SOM actually promises. Checked
+by sampling QE at nine checkpoints across a 3 000-step run: it spikes to 0.36 as soon as topology
+starts to matter, then falls monotonically to 0.12 — the real, honest "goes down as the map fits
+the data" story, just measured from *after* the initial reorganisation rather than from the random
+start. The golden test pins QE from step 300, not step 0, and asserts the random baseline's own
+topographic error separately so the exception is checked rather than merely asserted away.
+
+**The exponential schedule was retuned after the first run, live, not guessed in advance.**
+`v0 · e⁻¹` remaining at the horizon (the textbook constant) measured visibly under-converged: a
+12×12 map still had a *higher* QE after 3 000 steps than its random init, because σ was still 2.2
+hex-units wide at the very last step — plenty to keep the lattice smoothed into a manifold rather
+than letting individual nodes settle. Retuned to `v0 · e⁻³` (~5% remaining), which is what the
+golden numbers above are pinned against.
+
+**A step is one sample, not a minibatch — a deliberate divergence from the MLP side's shape of
+invariant 2, not a violation of it.** The MLP batches because a gradient is an average over rows;
+a SOM update has no such average, each sample drags the lattice on its own. Samples are drawn
+*with replacement*, the classical Kohonen loop, rather than a shuffled epoch — tying "how many
+times has this row been seen" to `rows.length` would fight the schedule's own `steps` horizon.
+Invariant 2's actual rule — training advances in whole, fixed units of work, and the render loop
+drains only what has completed — holds regardless of what the unit is.
+
+**`npm run som` mirrors `npm run data`'s ASCII scatter with real terminal colour.** Two 12×12
+grids of 24-bit ANSI background swatches, before and after training, so "the map orders itself"
+is something a reader can see without opening a browser — before is scattered noise, after is a
+smooth gradient across the lattice. The golden test and the script assert the same numbers, so
+drift is caught by whichever runs first, the same pattern `scripts/train.ts` set for the MLP side.
+
 **Slice 8 — "The architecture editor's neighbour".** A parameter-budget readout beside the
 hidden-layer editor: parameter count against the training split's own row count, flagged the
 moment the network has at least as many free numbers as data points. 222 tests.
@@ -427,16 +488,15 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 9 — "Kohonen kernel"
+### Next: slice 10 — "Reading a map"
 
-`packages/som`: the hex lattice, axial coordinates, BMU, neighbourhood function, and the
-alpha/sigma schedules — a 12×12 map ordering itself on the colour cube. This is the line §13 and
-the "things not to do" list both name explicitly: nothing SOM-shaped gets built before this slice,
-on purpose, so that everything built through slice 8 was shaped by one real client rather than
-guessed at for two. The neighbour table is the one piece with a stated risk already — built once
-per topology, tested against a hand-counted 3×3, because lattice distance on offset rows is not
-Euclidean and getting it wrong produces a map that still trains and is quietly not a SOM. Quantisation
-error gets a golden test the same way the MLP's golden run got one.
+The SOM instrument column: U-matrix and component planes as `ImageData` blits (the same code path
+slice 3 built for the decision field), QE and TE charted together so a reader can watch them
+diverge, and the network switch finally has something behind it — this is where `net-som`'s
+disabled button and its "nothing in the app uses it yet" tooltip stop being true. Labels arrive
+too, for the datasets that have them held back (§3's "unlabelled is a fact about training, not
+about the file"). The guided flow for the map waits one slice further, for slice 11, once the
+U-matrix — its own step 3 — exists to guide someone through.
 
 ## Invariants
 

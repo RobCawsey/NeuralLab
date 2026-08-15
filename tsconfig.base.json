@@ -22,7 +22,8 @@
     "paths": {
       "@neurallab/core": ["./packages/core/src/index.ts"],
       "@neurallab/data": ["./packages/data/src/index.ts"],
-      "@neurallab/mlp": ["./packages/mlp/src/index.ts"]
+      "@neurallab/mlp": ["./packages/mlp/src/index.ts"],
+      "@neurallab/som": ["./packages/som/src/index.ts"]
     }
   }
 }
