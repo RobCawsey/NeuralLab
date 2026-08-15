@@ -176,6 +176,7 @@
       }
       .kv b { color: var(--text); font-weight: 400; }
       .kv b.am { color: var(--amber); } .kv b.cy { color: var(--cyan); } .kv b.ok { color: var(--ok); }
+      .kv b.bad { color: var(--bad); }
       .divide { height: 1px; background: var(--line); margin: 3px 0; }
       /* flex: none — a shrinkable canvas renders shorter than its declared height. */
       #chart { display: block; flex: none; width: 100%; height: 150px; }
@@ -450,6 +451,8 @@
             <button id="btn-reinit" style="width:100%">Reinitialise weights</button>
             <div class="kv"><span>parameters</span><b class="am" id="s-params">—</b></div>
             <div class="kv"><span>connections</span><b id="s-edges">—</b></div>
+            <div class="kv"><span>budget</span><b id="s-budget">—</b></div>
+            <div class="note" id="budget-note"></div>
           </div>
 
           <div class="ph">Training<span class="sp"></span><em id="ph-opt">SGD</em></div>

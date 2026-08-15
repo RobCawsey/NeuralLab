@@ -232,6 +232,33 @@ export function paramCount(net: Net): number {
   return total;
 }
 
+/**
+ * Parameters against the rows the network is actually trained on — slice 8.
+ *
+ * `overBudget` is exactly "as many free numbers as data points", not some softer margin. A
+ * network with fewer parameters than training rows cannot simply memorise them — every row has
+ * to pull double duty explaining more than one weight — so the boundary the design document draws
+ * (§8, fig 8.6: "a network with more parameters than samples is the definition of challenge 7")
+ * is the literal `params >= samples`, not a threshold chosen to feel cautious.
+ */
+export interface ParamBudget {
+  readonly params: number;
+  readonly samples: number;
+  /** `params / samples`. `Infinity` when there are no training rows to divide by. */
+  readonly ratio: number;
+  readonly overBudget: boolean;
+}
+
+export function paramBudget(net: Net, trainSamples: number): ParamBudget {
+  const params = paramCount(net);
+  return {
+    params,
+    samples: trainSamples,
+    ratio: trainSamples > 0 ? params / trainSamples : Infinity,
+    overBudget: params >= trainSamples,
+  };
+}
+
 /** `[2, 8, 8, 2]` — input width followed by every layer's unit count. */
 export function shapeOf(net: Net): number[] {
   const first = net.layers[0];

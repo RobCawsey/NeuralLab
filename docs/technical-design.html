@@ -1149,6 +1149,23 @@ type FromWorker =
     </div>
   </figure>
 
+  <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 8 &middot; built and measured</span>
+    <p><strong>Only note 1 shipped in slice 8; notes 2 and 3 describe a dedicated Lab-stage screen
+    that does not exist yet.</strong> What actually landed is narrower and sits where the editor
+    already lived — Explorer's existing hidden-layer text input and preset buttons, which have
+    added and removed layers live since slice 1. Beside the parameter and connection counts that
+    were already printed there, a third line now reads parameters against the training split's own
+    row count, and a note underneath states the consequence in either direction: room to
+    generalise, or — at <code>params &gt;= samples</code> exactly, not a softer margin — a warning
+    naming challenge 7 by number. Both are recomputed on every architecture edit, the same render
+    pass that already redraws the parameter and connection counts.</p>
+    <p>Semantic warnings like "sigmoid at depth 6" and a standalone Lab architecture screen remain
+    unbuilt. They need a place to live that is not yet built — the Lab stage itself is still a
+    toolbar button with nothing behind it — so building them now would mean designing that home
+    under a different slice's cover. They stay in the backlog against whichever slice gives Lab its
+    first real content.</p>
+  </div>
+
   <figure style="margin-top:44px">
     <div class="mock">
       <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>

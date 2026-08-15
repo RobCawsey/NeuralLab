@@ -9,6 +9,7 @@ import {
   forward,
   initialise,
   maxAbsWeight,
+  paramBudget,
   paramCount,
   parseHidden,
   shapeOf,
@@ -121,6 +122,41 @@ describe('createNet', () => {
   it('rejects a degenerate shape', () => {
     expect(() => net([2])).toThrow();
     expect(() => net([2, 0, 2])).toThrow();
+  });
+});
+
+describe('paramBudget', () => {
+  it('is under budget when there are more training rows than parameters', () => {
+    // The app's own default: 2-8-8-2 is 114 parameters against a 168-row training split.
+    const n = net([2, 8, 8, 2]);
+    const b = paramBudget(n, 168);
+    expect(b.params).toBe(114);
+    expect(b.samples).toBe(168);
+    expect(b.ratio).toBeCloseTo(114 / 168, 10);
+    expect(b.overBudget).toBe(false);
+  });
+
+  it('is over budget at exact equality, not only past it', () => {
+    // 2-2 is 6 parameters (4 weights + 2 biases). Exactly 6 rows is the boundary case the design
+    // document draws the line at — "more parameters than samples", tested at >=, not >.
+    const n = net([2, 2]);
+    expect(paramCount(n)).toBe(6);
+    expect(paramBudget(n, 6).overBudget).toBe(true);
+    expect(paramBudget(n, 7).overBudget).toBe(false);
+  });
+
+  it('flags challenge 7 outright — 64 units on 8 samples', () => {
+    // "Learning the noise": 8 training rows, a hidden layer wide enough to memorise them.
+    const n = net([2, 64, 2]);
+    const b = paramBudget(n, 8);
+    expect(b.overBudget).toBe(true);
+    expect(b.ratio).toBeGreaterThan(20); // hundreds of parameters over a handful of rows
+  });
+
+  it('reports Infinity rather than dividing by zero when there are no training rows', () => {
+    const n = net([2, 2]);
+    expect(paramBudget(n, 0).ratio).toBe(Infinity);
+    expect(paramBudget(n, 0).overBudget).toBe(true);
   });
 });
 

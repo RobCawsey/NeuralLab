@@ -18,6 +18,34 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 8 — "The architecture editor's neighbour".** A parameter-budget readout beside the
+hidden-layer editor: parameter count against the training split's own row count, flagged the
+moment the network has at least as many free numbers as data points. 222 tests.
+
+**The threshold is `params >= samples`, not a margin chosen to feel cautious.** §8's own mockup
+note draws the line at exactly this — "a network with more parameters than samples is the
+definition of challenge 7" — so `paramBudget` in `packages/mlp/src/net.ts` tests `>=` and a test
+pins the boundary case itself: a 2-2 network (6 parameters) against exactly 6 training rows reads
+over budget, against 7 it does not.
+
+**The readout is a live comparison, not just a warning.** Both branches of the note are written
+out — "room to generalise" under budget, the memorisation warning over it — because the point
+isn't to stay quiet until something is wrong; it's to make the relationship between parameter
+count and training-row count legible on every edit, the same way `renderNetPanels` already showed
+raw parameter and connection counts without saying what they meant. Verified live: dropping
+samples to 20 (14 training rows after the 70/30 split) against the default 2-8-8-2 reads
+**114 / 14 — over budget**, quoting challenge 7 by name; putting samples back to 240 reads
+**114 / 168** and the colour and class flip from `--bad` to `--ok` exactly, confirmed against
+`getComputedStyle` rather than eyeballed.
+
+**A stale string got fixed in passing.** `drawOverCapNotice`'s second line read "Weight matrices
+arrive in slice 7" — true when §1 was written, wrong since slice 7 shipped diagnostics histograms
+instead and left the graph's own replacement-at-scale unbuilt. §6's rule about fixed strings
+rotting isn't only about runtime values; a string that names a future slice number is exactly as
+liable to go stale as one that names a training result, and this is the third time in the project
+a string like that has needed correcting. It now says only what is true today, and points at the
+weight-histogram panels slice 7 actually built as the thing to look at instead.
+
 **Slice 7 — "Diagnostics".** Momentum and Adam join SGD in the training panel, and Explorer gained
 three panels that had been empty since slice 1: gradient flow, weight and activation histograms,
 and a dead-ReLU-unit count. 218 tests.
@@ -388,12 +416,16 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 8 — "The architecture editor's neighbour"
+### Next: slice 9 — "Kohonen kernel"
 
-A parameter-budget readout beside the hidden-layer editor: a network wide enough to produce a
-histogram worth looking at is also wide enough to overfit 168 training rows, and slice 7 built the
-histograms without yet telling a reader when the network they just widened is the problem rather
-than the data.
+`packages/som`: the hex lattice, axial coordinates, BMU, neighbourhood function, and the
+alpha/sigma schedules — a 12×12 map ordering itself on the colour cube. This is the line §13 and
+the "things not to do" list both name explicitly: nothing SOM-shaped gets built before this slice,
+on purpose, so that everything built through slice 8 was shaped by one real client rather than
+guessed at for two. The neighbour table is the one piece with a stated risk already — built once
+per topology, tested against a hand-counted 3×3, because lattice distance on offset rows is not
+Euclidean and getting it wrong produces a map that still trains and is quietly not a SOM. Quantisation
+error gets a golden test the same way the MLP's golden run got one.
 
 ## Invariants
 

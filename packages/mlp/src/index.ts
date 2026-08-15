@@ -18,6 +18,7 @@ export {
   initialise,
   isInitScheme,
   maxAbsWeight,
+  paramBudget,
   paramCount,
   parseHidden,
   shapeOf,
@@ -27,6 +28,7 @@ export {
   type LossKind,
   type Net,
   type NetSpec,
+  type ParamBudget,
   type Scratch,
 } from './net.ts';
 export {

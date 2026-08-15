@@ -14,10 +14,10 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 7 of 16 — diagnostics.** The training panel now offers momentum and Adam alongside plain
-SGD, and Explorer grew three panels that were missing entirely: gradient-flow bars per layer,
-weight and activation histograms, and a dead-ReLU-unit count that turns challenge 5 (zero
-initialisation) into a number instead of a hunch.
+**Slice 8 of 16 — the architecture editor's neighbour.** A parameter-budget readout sits beside
+the hidden-layer editor now: parameter count against the training split's own row count, flagged
+the moment a network has at least as many free numbers as data points — the definition of
+challenge 7, made legible on every edit instead of only after a run goes wrong.
 
 ## Getting started
 
@@ -29,7 +29,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 218 tests, ~3.9 s
+npm test       # 222 tests, ~3.6 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the golden run, plus challenges 1 and 3, all asserted

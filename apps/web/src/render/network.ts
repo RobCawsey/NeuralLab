@@ -161,7 +161,14 @@ function magnitude(v: ArrayLike<number>): number {
   return max;
 }
 
-/** The "graph is the wrong drawing now" notice — §7's stated limit, announced not silent. */
+/**
+ * The "graph is the wrong drawing now" notice — §7's stated limit, announced not silent.
+ *
+ * This used to promise "weight matrices arrive in slice 7" — true when §1 was written, wrong
+ * since slice 7 shipped histograms instead and left the graph's own replacement-at-scale still
+ * unbuilt. §6's rule about fixed strings going stale applies to this one too; it now says only
+ * what is true today.
+ */
 export function drawOverCapNotice(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -175,6 +182,6 @@ export function drawOverCapNotice(
   ctx.fillText('Too many units to draw as a graph.', width / 2, height / 2 - 4);
   ctx.font = '10px "Cascadia Mono", Consolas, monospace';
   ctx.fillStyle = FAINT;
-  ctx.fillText('Weight matrices arrive in slice 7 — until then, keep a layer at 24 or fewer.',
+  ctx.fillText('Keep every layer at 24 units or fewer — the weight panels below still show this one.',
     width / 2, height / 2 + 14);
 }

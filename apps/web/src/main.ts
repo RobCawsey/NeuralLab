@@ -21,6 +21,7 @@ import {
   isActivation,
   isInitScheme,
   isOptimiserKind,
+  paramBudget,
   paramCount,
   parseHidden,
   shapeOf,
@@ -350,6 +351,23 @@ function renderNetPanels(): void {
   let edges = 0;
   for (const l of state.model.layers) edges += l.W.length;
   $('s-edges').textContent = String(edges);
+
+  /*
+   * The architecture editor's neighbour — slice 8. `state.parts` is only set once the first
+   * dataset has been built, which is true by the time this ever runs, but a defensive read costs
+   * nothing and a crash here would take the whole panel down with it.
+   */
+  const trainRows = state.parts?.train.length ?? 0;
+  const budget = paramBudget(state.model, trainRows);
+  const budgetEl = $('s-budget');
+  budgetEl.textContent = `${budget.params} / ${budget.samples}`;
+  budgetEl.className = budget.overBudget ? 'bad' : 'ok';
+  $('budget-note').innerHTML = budget.overBudget
+    ? `<em>${budget.params}</em> parameters for <em>${budget.samples}</em> training rows — ` +
+      'more free numbers than data points. This network can memorise the training set outright ' +
+      'rather than learn its shape &mdash; challenge 7.'
+    : `<em>${budget.params}</em> parameters for <em>${budget.samples}</em> training rows — ` +
+      'room to generalise.';
 }
 
 /**
