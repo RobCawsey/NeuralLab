@@ -184,6 +184,17 @@
       .badge.training { color: var(--amber); border-color: #4a3b1f; }
       .badge.done { color: var(--ok); border-color: #2b4c40; }
 
+      /* Diagnostics — slice 7. One row per layer, reusing .kv/.gauge where the shape already fits. */
+      .diag-row { display: grid; grid-template-columns: 52px 1fr 56px; align-items: center; gap: 8px; }
+      .diag-lb { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+      .diag-nt {
+        font-family: var(--mono); font-size: 10px; color: var(--faint); text-align: right;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .diag-hist { width: 100%; height: 34px; display: block; border-radius: 2px; }
+      .diag-block { display: flex; flex-direction: column; gap: 3px; }
+      .diag-dead { color: var(--bad) !important; }
+
       /*
         Stage gating — Guided / Explorer / Lab, decided by `body[data-stage]`.
 
@@ -443,6 +454,12 @@
 
           <div class="ph">Training<span class="sp"></span><em id="ph-opt">SGD</em></div>
           <div class="pb">
+            <label class="sl-head" for="optimiser">optimiser</label>
+            <div class="seg" id="optimiser">
+              <button id="opt-sgd" class="on" title="Plain gradient descent">SGD</button>
+              <button id="opt-momentum" title="Carries velocity forward — β 0.9, fixed">Momentum</button>
+              <button id="opt-adam" title="Adaptive, bias-corrected — β₁ 0.9, β₂ 0.999">Adam</button>
+            </div>
             <div class="sl">
               <span class="sl-name">learning rate</span>
               <input type="range" id="i-lr" min="-4" max="2.7" step="0.05" value="-1" />
@@ -522,6 +539,21 @@
 
           <div class="ph">Activations<span class="sp"></span><em>at the probe</em></div>
           <div class="pb" id="acts"></div>
+
+          <!--
+            Diagnostics — slice 7. Where §7's activations-at-the-probe panel above shows one
+            sample, these show the whole training set: gradient flow is a fact about the run
+            the worker just did, the two histograms are 168 forward passes over the mirror
+            model, computed fresh on every render (§5's budget makes that free at this size).
+          -->
+          <div class="ph">Gradient flow<span class="sp"></span><em>log scale</em></div>
+          <div class="pb" id="gradflow"></div>
+
+          <div class="ph">Weight distribution<span class="sp"></span><em>32 bins per layer</em></div>
+          <div class="pb" id="weighthist"></div>
+
+          <div class="ph">Activation distribution<span class="sp"></span><em id="ph-dead">&mdash;</em></div>
+          <div class="pb" id="acthist"></div>
 
           <div class="ph">Dataset<span class="sp"></span><em id="ph-seed">seed 4417</em></div>
           <div class="legend" id="legend"></div>

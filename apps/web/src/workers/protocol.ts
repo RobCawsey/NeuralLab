@@ -50,6 +50,12 @@ export interface RunPoint {
   readonly valLoss: number;
   readonly trainAccuracy: number;
   readonly valAccuracy: number;
+  /**
+   * One Euclidean norm per layer, from the step this point closed off — the gradient-flow bars.
+   * A snapshot of the last step in the window, not an average across it; see the note on
+   * `Trainer.lastGradNorms` for why that is the right simplification here.
+   */
+  readonly gradNorms: readonly number[];
 }
 
 export type ToWorker =

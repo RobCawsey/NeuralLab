@@ -148,7 +148,7 @@ describe('chunked training', () => {
       const trainer = createTrainer(
         net,
         built.parts.train,
-        { learningRate: 0.1, batchSize: 16 },
+        { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' },
         new Rng(NET.weightSeed),
       );
       for (const size of chunks) for (let i = 0; i < size; i++) trainStep(trainer, built.z);

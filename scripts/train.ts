@@ -62,7 +62,12 @@ function run(
   });
   initialise(net, 'glorot', new Rng(weightSeed));
 
-  const trainer = createTrainer(net, parts.train, { learningRate, batchSize }, new Rng(weightSeed));
+  const trainer = createTrainer(
+    net,
+    parts.train,
+    { learningRate, batchSize, optimiser: 'sgd' },
+    new Rng(weightSeed),
+  );
   for (let i = 0; i < steps; i++) trainStep(trainer, z);
 
   const scratch = createScratch(net);

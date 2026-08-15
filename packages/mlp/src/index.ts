@@ -35,20 +35,27 @@ export {
   sampleLoss,
 } from './loss.ts';
 export {
+  applyUpdate,
   backward,
   createGrads,
+  createOptimiserState,
   gradNorm,
   hasDiverged,
+  isOptimiserKind,
+  OPTIMISERS,
+  resetOptimiserState,
   scaleGrads,
   sgdStep,
   zeroGrads,
   type Grads,
   type OptimiserKind,
+  type OptimiserState,
 } from './backward.ts';
 export {
   DEFAULT_TRAIN,
   createTrainer,
   evaluateRows,
+  setTrainConfig,
   trainStep,
   type EvalResult,
   type StepMetrics,

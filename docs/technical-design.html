@@ -974,6 +974,43 @@ type FromWorker =
       quietly hides half its edges is worse than one that admits it.</p>
     </div>
 
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 7 &middot; built and measured</span>
+      <p><strong>Histograms and gradient flow built exactly as specified above</strong> — 32 fixed
+      bins, rects, log scale for the gradient bars, one row in the drawing table and not two,
+      because a weight histogram and an activation histogram are the same picture of a different
+      array. What §7 did not yet say is who owns the array: <code>activationStats</code> runs
+      <code>forward</code> once per training row, and doing that into the same scratch buffer the
+      network graph reads for the probe's node colours would leave the graph painting the
+      <em>last diagnostics sample</em> instead of the point under the reader's cursor. A dedicated
+      <code>diagScratch</code>, rebuilt alongside the network, is the third buffer in this project
+      built for exactly that reason — <code>evaluateRows</code> and the stepper's trace scratch
+      were the first two.</p>
+      <p><strong>Dead-unit counting turns challenge 5 from a claim into a live number.</strong> A
+      unit counts as dead if it never fires positive across the whole training set — not the probe
+      point alone, since a unit dead at the probe might fire elsewhere. Forcing zero initialisation
+      under a ReLU stack reads <strong>16 of 16 dead</strong> before the first step runs; the same
+      network trained with Adam for 400 steps reads <strong>0 of 16</strong>. Only ReLU layers are
+      counted — tanh and sigmoid units are never "dead" in this sense, so the readout says
+      <em>no relu layers</em> rather than a misleading zero.</p>
+      <p><strong>Switching optimiser mid-run needed its own reset boundary.</strong> Momentum and
+      Adam each carry state across steps — a velocity, or a pair of moments — and a plain
+      <code>config</code> assignment would let Adam's second moment survive under Momentum's label
+      after a switch, silently wrong rather than reset, and it would still train because a
+      mislabelled velocity is still a velocity. <code>setTrainConfig</code> compares the incoming
+      optimiser kind against the current one and resets only on an actual change; it is the one
+      path both the page and the worker's <code>case 'config'</code> use, replacing what had been
+      a bare assignment on the worker side.</p>
+      <p>Momentum is written as the unscaled <code>v &larr; &beta;&middot;v + g</code>, not the
+      exponential-moving-average form some texts use — deliberately, so it reads as a visibly
+      different convention from Adam's actual EMA sitting in the same file, rather than the same
+      idea written twice with a silent factor of <code>(1 &minus; &beta;)</code> between them.
+      Adam is checked two ways, per the risk register entry below: a hand-computed first step, and
+      a closed-form identity — for a constant gradient, the bias-corrected moments converge to
+      exactly <code>g</code> and <code>g&sup2;</code> at every step, so the effective step size is
+      exactly the learning rate regardless of magnitude, which a convergence-only test would not
+      catch a violation of.</p>
+    </div>
+
     <h3>The 3D views, and the rule they live under</h3>
     <p>A <code>2D / 3D</code> toggle in the toolbar, or <code>2</code> and <code>3</code>. Two
     scenes, one per network, both dynamically imported.</p>

@@ -53,7 +53,7 @@ function goldenRun(): {
   const trainer = createTrainer(
     net,
     parts.train,
-    { learningRate: PROTOCOL.learningRate, batchSize: PROTOCOL.batchSize },
+    { learningRate: PROTOCOL.learningRate, batchSize: PROTOCOL.batchSize, optimiser: 'sgd' },
     new Rng(PROTOCOL.weightSeed),
   );
   for (let i = 0; i < PROTOCOL.steps; i++) trainStep(trainer, z);

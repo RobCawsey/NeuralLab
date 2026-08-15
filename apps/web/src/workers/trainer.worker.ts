@@ -12,7 +12,7 @@
  * which is invariant 2 stated one more time.
  */
 
-import { evaluateRows, flattenWeights, trainStep, type Net, type Trainer } from '@neurallab/mlp';
+import { evaluateRows, flattenWeights, setTrainConfig, trainStep, type Net, type Trainer } from '@neurallab/mlp';
 import { createScratch, createTrainer, createTraceScratch, type Scratch, type TraceScratch } from '@neurallab/mlp';
 import { Rng, type Dataset, type Split, type Standardiser } from '@neurallab/core';
 import { buildData, buildNet } from '../run/build.ts';
@@ -120,6 +120,7 @@ function takePoint(s: Session): void {
     valLoss: va.loss,
     trainAccuracy: tr.accuracy,
     valAccuracy: va.accuracy,
+    gradNorms: [...s.trainer.lastGradNorms],
   });
   s.lossSum = 0;
   s.lossCount = 0;
@@ -245,7 +246,9 @@ ctx.onmessage = (event: MessageEvent<ToWorker>): void => {
       }
       case 'config': {
         if (!session) return;
-        session.trainer.config = message.train;
+        // Not a plain assignment — a kind change (SGD → Adam, say) has to reset the optimiser's
+        // own state, or Adam's second moment keeps running under whatever label comes next.
+        setTrainConfig(session.trainer, message.train);
         return;
       }
       case 'probe': {

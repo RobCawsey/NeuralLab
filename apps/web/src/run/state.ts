@@ -12,7 +12,15 @@ import { forward, type Net, type Scratch } from '@neurallab/mlp';
 import { createScratch } from '@neurallab/mlp';
 import type { Dataset, Split, Standardiser } from '@neurallab/core';
 import { isGeneratorKey, GENERATORS, type GeneratorKey } from '@neurallab/data';
-import { isActivation, isInitScheme, parseHidden, type Activation, type InitScheme } from '@neurallab/mlp';
+import {
+  isActivation,
+  isInitScheme,
+  isOptimiserKind,
+  parseHidden,
+  type Activation,
+  type InitScheme,
+  type OptimiserKind,
+} from '@neurallab/mlp';
 import { buildData, buildNet, type DataConfig, type NetConfig } from './build.ts';
 import type { RunPoint, TrainSetup } from '../workers/protocol.ts';
 
@@ -35,6 +43,7 @@ export interface AppState {
   weightSeed: number;
   learningRate: number;
   batchSize: number;
+  optimiser: OptimiserKind;
   targetSteps: number;
 
   data: Dataset;
@@ -90,6 +99,9 @@ const DEFAULTS = {
   weightSeed: 1,
   learningRate: 0.1,
   batchSize: 16,
+  // SGD, so the app opens on the optimiser the golden run is pinned to. Guided never shows the
+  // control at all — one fewer thing before "watch it learn" — and Explorer defaults to it too.
+  optimiser: 'sgd' as OptimiserKind,
   targetSteps: 400,
 };
 
@@ -143,7 +155,7 @@ export function trainSetup(s: AppState, generation: number): TrainSetup {
     generation,
     data: dataConfig(s),
     net: netConfig(s),
-    train: { learningRate: s.learningRate, batchSize: s.batchSize },
+    train: { learningRate: s.learningRate, batchSize: s.batchSize, optimiser: s.optimiser },
     evalEvery: evalEvery(s.targetSteps),
   };
 }
@@ -235,6 +247,9 @@ export function readUrl(s: AppState, search: string): void {
   // Up to 500, because challenge 3 needs a rate that visibly destroys the network and the
   // measured figure for that is in the hundreds, not the single digits §6 first guessed.
   s.learningRate = clampFloat(q.get('lr'), 0.0001, 500, s.learningRate);
+
+  const optimiser = q.get('opt');
+  if (optimiser !== null && isOptimiserKind(optimiser)) s.optimiser = optimiser;
 }
 
 export function writeUrl(s: AppState): string {
@@ -251,6 +266,7 @@ export function writeUrl(s: AppState): string {
   q.set('init', s.init);
   q.set('wseed', String(s.weightSeed));
   q.set('lr', String(s.learningRate));
+  q.set('opt', s.optimiser);
   q.set('batch', String(s.batchSize));
   q.set('steps', String(s.targetSteps));
   return '?' + q.toString();

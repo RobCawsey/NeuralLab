@@ -20,11 +20,16 @@ import {
   describeShape,
   isActivation,
   isInitScheme,
+  isOptimiserKind,
   paramCount,
   parseHidden,
   shapeOf,
+  type TrainConfig,
 } from '@neurallab/mlp';
 import { classColour, drawScatter, resize } from './render/scatter.ts';
+import { drawHistogram } from './render/histogram.ts';
+import { activationStats, weightStats } from './run/diagnostics.ts';
+import { createScratch } from '@neurallab/mlp';
 import { wx, wy, sx, sy, visibleBox, type Camera } from './render/camera.ts';
 import { drawNetwork, drawOverCapNotice, heatColour } from './render/network.ts';
 import { drawChart } from './render/chart.ts';
@@ -69,6 +74,16 @@ let fieldStale = true;
 let fieldPending = false;
 let fieldAt = 0;
 let fieldMs = 0;
+
+/**
+ * Diagnostics get their own scratch, for the same reason `evaluateRows` and the stepper's trace
+ * do: `activationStats` calls `forward` once per training row, and if it wrote into
+ * `state.scratch` it would overwrite the probe's activations after the graph had already been
+ * told to read them from there — the graph would render the *last diagnostics sample's* colours
+ * instead of the point the reader is pointing at. Rebuilt alongside the network, in
+ * `rebuildEverything`.
+ */
+let diagScratch = createScratch(state.model);
 let focus: [number, number] | null = null;
 let dragging = false;
 
@@ -192,6 +207,11 @@ function setRunning(on: boolean): void {
   if (on) trainer.run(state.targetSteps);
   else trainer.pause();
   render();
+}
+
+/** The three fields `trainer.configure` needs, read from state in one place so none is missed. */
+function currentTrainConfig(): TrainConfig {
+  return { learningRate: state.learningRate, batchSize: state.batchSize, optimiser: state.optimiser };
 }
 
 /* ---------------- controls ---------------- */
@@ -461,10 +481,103 @@ function kv(label: string, value: string): HTMLElement {
 
 /* ---------------- render ---------------- */
 
+/**
+ * Gradient flow, weight histograms, activation histograms, dead-unit count — §7 of the design
+ * document. Recomputed every render with no throttle: at 168 training rows on a small network
+ * this is the same order of arithmetic as one training step (§5's budget), measured cheap enough
+ * not to need one.
+ */
+function renderDiagnostics(): void {
+  const weightHists = weightStats(state.model);
+  const actStats = activationStats(state.model, state.z, state.parts.train, diagScratch);
+  const last = state.points[state.points.length - 1];
+  const norms = last?.gradNorms ?? state.model.layers.map(() => 0);
+
+  const gradHost = $('gradflow');
+  gradHost.replaceChildren();
+  // Floored at 1e-6 rather than 0, so a genuinely vanished gradient still draws a hairline
+  // instead of an empty gauge indistinguishable from "nothing has trained yet".
+  const floor = -6;
+  let ceiling = floor;
+  for (const n of norms) ceiling = Math.max(ceiling, Math.log10(Math.max(1e-6, n)));
+  for (let l = 0; l < norms.length; l++) {
+    const n = norms[l] as number;
+    const row = document.createElement('div');
+    row.className = 'diag-row';
+    const lb = document.createElement('span');
+    lb.className = 'diag-lb';
+    lb.textContent = `layer ${l + 1}`;
+    const gauge = document.createElement('span');
+    gauge.className = 'gauge';
+    const bar = document.createElement('i');
+    const logN = Math.log10(Math.max(1e-6, n));
+    const pct = ceiling > floor ? ((logN - floor) / (ceiling - floor)) * 100 : 100;
+    bar.style.width = `${Math.max(2, Math.min(100, pct))}%`;
+    gauge.append(bar);
+    const nt = document.createElement('span');
+    nt.className = 'diag-nt';
+    nt.textContent = n.toExponential(1).replace('e-', 'e−');
+    row.append(lb, gauge, nt);
+    gradHost.append(row);
+  }
+
+  const weightHost = $('weighthist');
+  weightHost.replaceChildren();
+  weightHists.forEach((hist, l) => {
+    const block = document.createElement('div');
+    block.className = 'diag-block';
+    const label = document.createElement('span');
+    label.className = 'diag-lb';
+    label.textContent = `layer ${l + 1}`;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'diag-hist';
+    block.append(label, canvas);
+    weightHost.append(block);
+    queueMicrotask(() => {
+      const fit = resize(canvas);
+      if (fit) drawHistogram(fit.ctx, hist, fit.w, fit.h, '#4ea8c4');
+    });
+  });
+
+  const actHost = $('acthist');
+  actHost.replaceChildren();
+  let deadTotal = 0;
+  let reluTotal = 0;
+  let anyRelu = false;
+  actStats.forEach((s, l) => {
+    if (s.isRelu) {
+      anyRelu = true;
+      deadTotal += s.deadUnits;
+      reluTotal += s.totalUnits;
+    }
+    const block = document.createElement('div');
+    block.className = 'diag-block';
+    const label = document.createElement('span');
+    label.className = 'diag-lb' + (s.isRelu && s.deadUnits > 0 ? ' diag-dead' : '');
+    label.textContent = s.isRelu ? `layer ${l + 1} · ${s.deadUnits} of ${s.totalUnits} dead` : `layer ${l + 1}`;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'diag-hist';
+    block.append(label, canvas);
+    actHost.append(block);
+    queueMicrotask(() => {
+      const fit = resize(canvas);
+      if (fit) drawHistogram(fit.ctx, s.histogram, fit.w, fit.h, '#e9a13b');
+    });
+  });
+  $('ph-dead').textContent = anyRelu ? `${deadTotal} of ${reluTotal} dead` : 'no relu layers';
+}
+
 /** Everything that changes as the run advances. */
 function renderRunPanels(): void {
   const { step, epoch, targetSteps, points } = state;
   const last = points[points.length - 1];
+
+  // Same fix as the dataset select and the arch input in slice 6: a control synced from state
+  // on every render cannot go stale, whatever set state.optimiser last.
+  for (const b of Array.from($('optimiser').querySelectorAll('button'))) {
+    b.classList.toggle('on', b.id === `opt-${state.optimiser}`);
+  }
+  $('ph-opt').textContent = state.optimiser === 'sgd' ? 'SGD' : state.optimiser === 'momentum' ? 'Momentum' : 'Adam';
 
   $('ph-chart').textContent = `step ${step}`;
   $('s-step').textContent = `${step} / ${targetSteps}`;
@@ -617,6 +730,7 @@ function render(): void {
   renderOutputNote(out);
   renderActivations(input);
   renderRunPanels();
+  renderDiagnostics();
   guided.render();
 }
 
@@ -675,6 +789,7 @@ function rebuildEverything(options: { data: boolean }): void {
   // from the same weight seed keeps "change the noise" from also meaning "reroll the weights".
   rebuildNet(state);
   resetRun(state);
+  diagScratch = createScratch(state.model);
 
   state.rebuilding = true;
   field = null;
@@ -899,12 +1014,32 @@ function boot(): void {
   };
   lr.addEventListener('input', () => {
     state.learningRate = Number(Math.pow(10, Number(lr.value)).toPrecision(3));
-    trainer.configure({ learningRate: state.learningRate, batchSize: state.batchSize });
+    trainer.configure(currentTrainConfig());
     showLr();
     history.replaceState(null, '', writeUrl(state));
     render();
   });
   showLr();
+
+  /*
+   * Optimiser. A segmented control, not a slider — SGD / Momentum / Adam is a choice among three
+   * named things, and momentum's β and Adam's β1/β2/ε are fixed rather than exposed (§7 of the
+   * design document): a beginner does not need a fourth and fifth dial before the first three
+   * have taught them anything.
+   *
+   * Switching mid-run does not rebuild — `trainer.configure` reaches `setTrainConfig` in the
+   * worker, which resets only the optimiser's own state (Adam's moments cannot mean anything
+   * under a `momentum` label) and leaves the step count, the chart, and the weights exactly
+   * where they were.
+   */
+  segment('optimiser', (id) => {
+    const kind = id.replace('opt-', '');
+    if (!isOptimiserKind(kind)) return;
+    state.optimiser = kind;
+    trainer.configure(currentTrainConfig());
+    history.replaceState(null, '', writeUrl(state));
+    render();
+  });
 
   slider('i-batch', 'v-batch', () => state.batchSize, (v) => (state.batchSize = v), (v) => String(v),
     () => {

@@ -118,15 +118,131 @@ export function gradNorm(grads: Grads, layer: number): number {
 
 /* ---------------- optimiser ---------------- */
 
-export type OptimiserKind = 'sgd';
+export const OPTIMISERS = ['sgd', 'momentum', 'adam'] as const;
+export type OptimiserKind = (typeof OPTIMISERS)[number];
+
+export function isOptimiserKind(v: string): v is OptimiserKind {
+  return (OPTIMISERS as readonly string[]).includes(v);
+}
 
 /**
- * Plain stochastic gradient descent: `w -= lr * dw`.
+ * Fixed hyperparameters for momentum and Adam.
  *
- * Momentum and Adam arrive in slice 7. Adding them now would mean three code paths and no way
- * to tell which one a disappointing loss curve came from — and slice 7 pairs them with the
- * diagnostics that make the difference visible.
+ * Not exposed as sliders. §6's guided flow has already made the case that a beginner does not
+ * need a fourth dial before they have used the first three, and 0.9 / 0.999 / 1e-8 are the
+ * values every reference implementation ships with — there is no lesson in retuning them.
  */
+const MOMENTUM_BETA = 0.9;
+const ADAM_BETA1 = 0.9;
+const ADAM_BETA2 = 0.999;
+const ADAM_EPSILON = 1e-8;
+
+/**
+ * Per-parameter state an optimiser carries between steps. Shaped like `Grads`, because momentum
+ * and Adam are exactly that: one more array per parameter, updated from the gradient instead of
+ * replacing it.
+ */
+export interface OptimiserState {
+  kind: OptimiserKind;
+  /** Momentum's velocity, or Adam's first moment. Unused and empty for `sgd`. */
+  readonly mW: Float64Array[];
+  readonly mB: Float64Array[];
+  /** Adam's second moment. Unused and empty for `momentum` and `sgd`. */
+  readonly vW: Float64Array[];
+  readonly vB: Float64Array[];
+  /** Adam's step count, for bias correction. Meaningless for the other two. */
+  t: number;
+}
+
+export function createOptimiserState(net: Net, kind: OptimiserKind): OptimiserState {
+  const zeros = (): Float64Array[] => net.layers.map((l) => new Float64Array(l.W.length));
+  const zerosB = (): Float64Array[] => net.layers.map((l) => new Float64Array(l.b.length));
+  return { kind, mW: zeros(), mB: zerosB(), vW: zeros(), vB: zerosB(), t: 0 };
+}
+
+/**
+ * Switch an existing optimiser's kind, resetting its state to zero.
+ *
+ * A run mid-flight that changes optimiser cannot keep Adam's second moment and call it momentum's
+ * velocity — the two numbers mean different things, and a state built for one kind applied under
+ * another is not "warm-started", it is wrong. Zeroing is the same discontinuity switching from
+ * SGD to Adam already has on step 1, just arriving one step later.
+ */
+export function resetOptimiserState(state: OptimiserState, kind: OptimiserKind): void {
+  state.kind = kind;
+  state.t = 0;
+  for (const arrays of [state.mW, state.mB, state.vW, state.vB]) {
+    for (const a of arrays) a.fill(0);
+  }
+}
+
+/**
+ * Apply one update, in place, according to `state.kind`. `sgdStep` still exists on its own below
+ * for anything that wants plain SGD without carrying optimiser state — the golden run does.
+ *
+ * **Momentum** here is the un-scaled form most references mean by "SGD with momentum":
+ * `v ← β·v + g`, `w ← w − lr·v`. The exponential-moving-average form (`v ← β·v + (1−β)·g`) is
+ * closer to what Adam's first moment does below, and mixing the two conventions in one file is
+ * exactly the kind of thing that turns into a silent factor-of-ten learning-rate bug.
+ *
+ * **Adam** is standard, bias-corrected: `m`/`v` are moving averages of the gradient and its
+ * square, divided by `1 − βᵗ` because both start at zero and are biased toward it early on. The
+ * bias-correction terms are the one part of this that is easy to misplace, the loss still goes
+ * down without them, and §13 names that as the specific risk — which is why `adam.test.ts`
+ * checks a step by hand rather than by watching a loss curve fall.
+ */
+export function applyUpdate(net: Net, grads: Grads, state: OptimiserState, learningRate: number): void {
+  if (state.kind === 'sgd') {
+    sgdStep(net, grads, learningRate);
+    return;
+  }
+
+  state.t++;
+  const bc1 = 1 - Math.pow(ADAM_BETA1, state.t);
+  const bc2 = 1 - Math.pow(ADAM_BETA2, state.t);
+
+  for (let l = 0; l < net.layers.length; l++) {
+    const layer = net.layers[l] as Dense;
+    const dW = grads.dW[l] as Float64Array;
+    const db = grads.db[l] as Float64Array;
+    const mW = state.mW[l] as Float64Array;
+    const mB = state.mB[l] as Float64Array;
+
+    if (state.kind === 'momentum') {
+      for (let i = 0; i < layer.W.length; i++) {
+        mW[i] = MOMENTUM_BETA * (mW[i] as number) + (dW[i] as number);
+        layer.W[i] = (layer.W[i] as number) - learningRate * (mW[i] as number);
+      }
+      for (let i = 0; i < layer.b.length; i++) {
+        mB[i] = MOMENTUM_BETA * (mB[i] as number) + (db[i] as number);
+        layer.b[i] = (layer.b[i] as number) - learningRate * (mB[i] as number);
+      }
+      continue;
+    }
+
+    // adam
+    const vW = state.vW[l] as Float64Array;
+    const vB = state.vB[l] as Float64Array;
+    for (let i = 0; i < layer.W.length; i++) {
+      const g = dW[i] as number;
+      mW[i] = ADAM_BETA1 * (mW[i] as number) + (1 - ADAM_BETA1) * g;
+      vW[i] = ADAM_BETA2 * (vW[i] as number) + (1 - ADAM_BETA2) * g * g;
+      const mHat = (mW[i] as number) / bc1;
+      const vHat = (vW[i] as number) / bc2;
+      layer.W[i] = (layer.W[i] as number) - (learningRate * mHat) / (Math.sqrt(vHat) + ADAM_EPSILON);
+    }
+    for (let i = 0; i < layer.b.length; i++) {
+      const g = db[i] as number;
+      mB[i] = ADAM_BETA1 * (mB[i] as number) + (1 - ADAM_BETA1) * g;
+      vB[i] = ADAM_BETA2 * (vB[i] as number) + (1 - ADAM_BETA2) * g * g;
+      const mHat = (mB[i] as number) / bc1;
+      const vHat = (vB[i] as number) / bc2;
+      layer.b[i] = (layer.b[i] as number) - (learningRate * mHat) / (Math.sqrt(vHat) + ADAM_EPSILON);
+    }
+  }
+}
+
+/** Plain stochastic gradient descent: `w -= lr * dw`. What the golden run is pinned against. */
 export function sgdStep(net: Net, grads: Grads, learningRate: number): void {
   for (let l = 0; l < net.layers.length; l++) {
     const layer = net.layers[l] as Dense;

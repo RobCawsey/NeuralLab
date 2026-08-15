@@ -9,13 +9,18 @@
 import { Rng, sample, type Dataset } from '@neurallab/core';
 import { argmax, createScratch, forward, type Net, type Scratch } from './net.ts';
 import {
+  applyUpdate,
   backward,
   createGrads,
+  createOptimiserState,
+  gradNorm,
+  resetOptimiserState,
   scaleGrads,
-  sgdStep,
   zeroGrads,
   hasDiverged,
   type Grads,
+  type OptimiserKind,
+  type OptimiserState,
 } from './backward.ts';
 import { sampleLoss } from './loss.ts';
 import { captureTrace, type StepTrace, type TraceScratch } from './trace.ts';
@@ -23,14 +28,16 @@ import { captureTrace, type StepTrace, type TraceScratch } from './trace.ts';
 export interface TrainConfig {
   readonly learningRate: number;
   readonly batchSize: number;
+  readonly optimiser: OptimiserKind;
 }
 
-export const DEFAULT_TRAIN: TrainConfig = { learningRate: 0.1, batchSize: 16 };
+export const DEFAULT_TRAIN: TrainConfig = { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' };
 
 export interface Trainer {
   readonly net: Net;
   readonly scratch: Scratch;
   readonly grads: Grads;
+  readonly optState: OptimiserState;
   /** Training row indices, reshuffled at the end of each epoch. */
   readonly order: Int32Array;
   readonly rng: Rng;
@@ -39,6 +46,15 @@ export interface Trainer {
   step: number;
   epoch: number;
   diverged: boolean;
+  /**
+   * One layer's gradient norm per layer, from the most recent step — the gradient-flow bars.
+   *
+   * A snapshot of the last step in whatever window the reader is looking at, not an average
+   * across it, the same simplification the loss band's `lossMin`/`lossMax` do not make but the
+   * chart's rarer readouts do: computing it is cheap and computing it exactly matters less than
+   * the trend across many points does.
+   */
+  readonly lastGradNorms: number[];
 }
 
 export function createTrainer(
@@ -53,6 +69,7 @@ export function createTrainer(
     net,
     scratch: createScratch(net),
     grads: createGrads(net),
+    optState: createOptimiserState(net, config.optimiser),
     order,
     rng,
     config,
@@ -60,7 +77,22 @@ export function createTrainer(
     step: 0,
     epoch: 0,
     diverged: false,
+    lastGradNorms: net.layers.map(() => 0),
   };
+}
+
+/**
+ * Change a trainer's configuration, resetting the optimiser's state if its kind changed.
+ *
+ * The one call sites of `t.config = ...` this project had before slice 7 was safe because SGD
+ * carries no state to go stale. The moment a second optimiser exists, replacing the config
+ * directly would leave Adam's second moment sitting under a `kind: 'momentum'` label — not
+ * warm-started, just wrong, since the two numbers mean different things. Every caller that
+ * changes config after `createTrainer` should use this rather than assigning the field.
+ */
+export function setTrainConfig(t: Trainer, config: TrainConfig): void {
+  if (config.optimiser !== t.optState.kind) resetOptimiserState(t.optState, config.optimiser);
+  t.config = config;
 }
 
 export interface StepMetrics {
@@ -155,7 +187,11 @@ export function trainStep(t: Trainer, ds: Dataset, options: StepOptions = {}): S
     );
   }
 
-  sgdStep(net, grads, config.learningRate);
+  // Captured after averaging and before the update, same moment the trace is taken — the
+  // gradient that is about to move the weights, not a stale one from the step before.
+  for (let l = 0; l < net.layers.length; l++) t.lastGradNorms[l] = gradNorm(grads, l);
+
+  applyUpdate(net, grads, t.optState, config.learningRate);
   t.step++;
 
   // Checked every step because challenge 3 is *about* reaching this state, and a diverged

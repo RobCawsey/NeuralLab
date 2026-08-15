@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Rng, fitStandardiser, split, standardise, type Dataset } from '@neurallab/core';
 import { moons, xor } from '@neurallab/data';
 import { createNet, createScratch, initialise, type Net } from '../src/net.ts';
-import { createTrainer, evaluateRows, trainStep } from '../src/train.ts';
+import { createTrainer, evaluateRows, setTrainConfig, trainStep } from '../src/train.ts';
 import { hasDiverged } from '../src/backward.ts';
 
 function prepared(data: Dataset, fraction = 0.7) {
@@ -21,8 +21,16 @@ function build(z: Dataset, hidden: number[], weightSeed = 1): Net {
   return net;
 }
 
-function train(z: Dataset, rows: Int32Array, net: Net, steps: number, lr = 0.1, batch = 16) {
-  const trainer = createTrainer(net, rows, { learningRate: lr, batchSize: batch }, new Rng(1));
+function train(
+  z: Dataset,
+  rows: Int32Array,
+  net: Net,
+  steps: number,
+  lr = 0.1,
+  batch = 16,
+  optimiser: 'sgd' | 'momentum' | 'adam' = 'sgd',
+) {
+  const trainer = createTrainer(net, rows, { learningRate: lr, batchSize: batch, optimiser }, new Rng(1));
   let last = trainStep(trainer, z);
   for (let i = 1; i < steps; i++) last = trainStep(trainer, z);
   return { trainer, last };
@@ -55,7 +63,7 @@ describe('trainStep', () => {
     // batch size would silently change which samples are seen together.
     const { z, parts } = prepared(moons({ n: 240, seed: 3 }));
     const net = build(z, [4]);
-    const trainer = createTrainer(net, parts.train, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const trainer = createTrainer(net, parts.train, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     const first = Array.from(trainer.order);
 
     while (trainer.epoch === 0) trainStep(trainer, z);
@@ -74,11 +82,11 @@ describe('trainStep', () => {
     const { z, parts } = prepared(moons({ n: 240, seed: 4 }));
 
     const a = build(z, [6, 6]);
-    const ta = createTrainer(a, parts.train, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const ta = createTrainer(a, parts.train, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     for (let i = 0; i < 120; i++) trainStep(ta, z);
 
     const b = build(z, [6, 6]);
-    const tb = createTrainer(b, parts.train, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const tb = createTrainer(b, parts.train, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     for (let block = 0; block < 4; block++) for (let i = 0; i < 30; i++) trainStep(tb, z);
 
     expect(Array.from(a.layers[0]!.W)).toEqual(Array.from(b.layers[0]!.W));
@@ -226,11 +234,11 @@ describe('evaluateRows', () => {
     const { z, parts } = prepared(moons({ n: 240, seed: 10 }));
 
     const a = build(z, [6]);
-    const ta = createTrainer(a, parts.train, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const ta = createTrainer(a, parts.train, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     for (let i = 0; i < 50; i++) trainStep(ta, z);
 
     const b = build(z, [6]);
-    const tb = createTrainer(b, parts.train, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const tb = createTrainer(b, parts.train, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     const spy = createScratch(b);
     for (let i = 0; i < 50; i++) {
       trainStep(tb, z);
@@ -238,5 +246,53 @@ describe('evaluateRows', () => {
     }
 
     expect(Array.from(b.layers[0]!.W)).toEqual(Array.from(a.layers[0]!.W));
+  });
+});
+
+describe('optimisers, through the real training loop', () => {
+  /*
+   * optimisers.test.ts checks momentum and Adam's arithmetic in isolation, against a hand-worked
+   * gradient. This checks the thing that arithmetic test cannot: wired into `trainStep`, on a
+   * real dataset, all three optimisers still solve the same easy problem.
+   */
+  it('trains moons to a strong accuracy under all three optimisers', () => {
+    const { z, parts } = prepared(moons({ n: 240, seed: 11 }));
+    for (const optimiser of ['sgd', 'momentum', 'adam'] as const) {
+      const net = build(z, [8, 8]);
+      train(z, parts.train, net, 400, 0.1, 16, optimiser);
+      const result = evaluateRows(net, z, parts.train, createScratch(net));
+      expect(result.accuracy, optimiser).toBeGreaterThan(0.85);
+    }
+  });
+
+  it('records a gradient norm per layer, every step', () => {
+    const { z, parts } = prepared(moons({ n: 240, seed: 12 }));
+    const net = build(z, [8, 8]);
+    const trainer = createTrainer(net, parts.train, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
+    trainStep(trainer, z);
+    expect(trainer.lastGradNorms).toHaveLength(3);
+    for (const n of trainer.lastGradNorms) {
+      expect(n).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(n)).toBe(true);
+    }
+  });
+
+  it('setTrainConfig resets optimiser state only when the kind actually changes', () => {
+    const { z, parts } = prepared(moons({ n: 240, seed: 13 }));
+    const net = build(z, [8]);
+    const trainer = createTrainer(net, parts.train, { learningRate: 0.1, batchSize: 16, optimiser: 'adam' }, new Rng(1));
+    trainStep(trainer, z);
+    trainStep(trainer, z);
+    expect(trainer.optState.t).toBe(2);
+
+    // Same kind, different learning rate: Adam's moments must survive.
+    setTrainConfig(trainer, { learningRate: 0.05, batchSize: 16, optimiser: 'adam' });
+    expect(trainer.optState.t).toBe(2);
+    expect(trainer.config.learningRate).toBe(0.05);
+
+    // A real kind change: the moments reset to zero.
+    setTrainConfig(trainer, { learningRate: 0.05, batchSize: 16, optimiser: 'momentum' });
+    expect(trainer.optState.t).toBe(0);
+    expect(trainer.optState.kind).toBe('momentum');
   });
 });

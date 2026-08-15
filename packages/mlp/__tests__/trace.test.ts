@@ -42,11 +42,11 @@ describe('tracing cannot change the run', () => {
     const { z, rows } = prepared();
 
     const plain = build(z);
-    const plainTrainer = createTrainer(plain, rows, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const plainTrainer = createTrainer(plain, rows, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     for (let i = 0; i < 200; i++) trainStep(plainTrainer, z);
 
     const traced = build(z);
-    const tracedTrainer = createTrainer(traced, rows, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const tracedTrainer = createTrainer(traced, rows, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     const into = createTraceScratch(traced);
     for (let i = 0; i < 200; i++) trainStep(tracedTrainer, z, { trace: { indexInBatch: i % 16, into } });
 
@@ -60,10 +60,10 @@ describe('tracing cannot change the run', () => {
     const { z, rows } = prepared();
 
     const plain = build(z);
-    const plainTrainer = createTrainer(plain, rows, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const plainTrainer = createTrainer(plain, rows, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
 
     const traced = build(z);
-    const tracedTrainer = createTrainer(traced, rows, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const tracedTrainer = createTrainer(traced, rows, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     const into = createTraceScratch(traced);
 
     for (let i = 0; i < 50; i++) {
@@ -80,7 +80,7 @@ describe('tracing cannot change the run', () => {
     // The strongest form of the same claim: the pinned number survives being watched.
     const { z, rows } = prepared();
     const net = build(z);
-    const trainer = createTrainer(net, rows, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const trainer = createTrainer(net, rows, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     const into = createTraceScratch(net);
     for (let i = 0; i < 400; i++) trainStep(trainer, z, { trace: { indexInBatch: 3, into } });
 
@@ -96,7 +96,7 @@ describe('what the trace records', () => {
 
   function traceOnce(hidden: number[] = [8, 8], act: 'tanh' | 'relu' = 'tanh', index = 0) {
     const net = build(z, hidden, act);
-    const trainer = createTrainer(net, rows, { learningRate: 0.1, batchSize: 16 }, new Rng(1));
+    const trainer = createTrainer(net, rows, { learningRate: 0.1, batchSize: 16, optimiser: 'sgd' }, new Rng(1));
     const into = createTraceScratch(net);
     const metrics = trainStep(trainer, z, { trace: { indexInBatch: index, into } });
     return { net, trace: metrics.trace!, trainer };

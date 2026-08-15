@@ -14,10 +14,10 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 6 of 16 — guided first run.** The app opens with no sliders at all: pick some data, pick a
-shape it can draw, watch it learn, see what changed. Four steps, ending with the network's very
-first guess replayed against its last — and an afterword that says so honestly even on the runs
-that don't improve.
+**Slice 7 of 16 — diagnostics.** The training panel now offers momentum and Adam alongside plain
+SGD, and Explorer grew three panels that were missing entirely: gradient-flow bars per layer,
+weight and activation histograms, and a dead-ReLU-unit count that turns challenge 5 (zero
+initialisation) into a number instead of a hunch.
 
 ## Getting started
 
@@ -29,7 +29,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 190 tests, ~3.7 s
+npm test       # 218 tests, ~3.9 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the golden run, plus challenges 1 and 3, all asserted

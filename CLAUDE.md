@@ -18,6 +18,53 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 7 — "Diagnostics".** Momentum and Adam join SGD in the training panel, and Explorer gained
+three panels that had been empty since slice 1: gradient flow, weight and activation histograms,
+and a dead-ReLU-unit count. 218 tests.
+
+**Optimiser state has to be reset on a kind change, not carried across it, and that is the whole
+design of `setTrainConfig`.** A plain `trainer.config = newConfig` was safe when the only thing a
+config held was numbers. It stops being safe the moment an optimiser carries its own memory —
+switching Adam → Momentum mid-run would leave Adam's second moment sitting under Momentum's `v`,
+silently wrong rather than reset, and the loss would still go down because a mislabelled velocity
+is still a velocity. `setTrainConfig` compares `config.optimiser !== state.kind` before deciding
+whether to call `resetOptimiserState`, and it is the only path either side of the worker boundary
+uses to change training config — `trainer.worker.ts`'s `case 'config'` calls it too, replacing a
+plain assignment that had exactly this bug.
+
+**Momentum is deliberately the unscaled form, `v ← β·v + g`, not the exponential moving average
+some textbooks use.** The two conventions differ by a factor of `(1 − β)`, and writing momentum
+right next to Adam's actual EMA (`m ← β₁·m + (1 − β₁)·g`) in the same file made picking the
+mismatched convention on purpose feel wrong — so both are commented with which they are and why,
+rather than left to look like the same idea twice.
+
+**Adam is checked two ways, because §13 flagged that a subtly wrong Adam still trains.** A
+hand-computed first step against the closed-form update, and a stronger identity: for a *constant*
+gradient, Adam's bias-corrected moments converge exactly to `g` and `g²` at every step, so the
+effective step size is exactly the learning rate regardless of the gradient's magnitude — a
+property a convergence-only test would never catch a violation of.
+
+**Diagnostics get their own scratch buffer, for the same reason evaluation and the stepper's trace
+already do.** `activationStats` runs `forward` once per training row to build the histograms;
+sharing `state.scratch` would mean the network graph repaints with the *last diagnostics sample's*
+activations instead of the probe's, right after the graph was told to read them from there. A
+`diagScratch`, rebuilt alongside the network in `rebuildEverything`, keeps the two apart —
+the pattern is now three-for-three (`evaluateRows`, `captureTrace`, `activationStats`).
+
+**Dead units are counted only under ReLU, and only from real data.** A unit is dead if it never
+fires positive across every training row — checked by running the whole training set through
+`diagScratch`, not by inspecting one probe point, since a unit dead at the probe might fire
+elsewhere. Verified live: forcing zero-initialisation with a ReLU hidden stack (challenge 5) reads
+**16 of 16 dead** before a single step runs, and the same network after 400 steps of Adam training
+reads 0 dead — the count moves with the run rather than being fixed at either extreme.
+
+**Gradient-flow bars read a snapshot, not an average.** `Trainer.lastGradNorms` is overwritten
+every `trainStep`, one Euclidean norm per layer, computed from the same `gradNorm()` helper that
+had sat unused since slice 2's gradient check. `RunPoint.gradNorms` carries whichever step closed
+the reporting window — consistent with `trainLoss`/`valLoss` already being end-of-window snapshots
+rather than window averages, so the chart's numbers don't disagree with each other about what
+"this point" means.
+
 **Slice 6 — "Guided first run".** The app opens in a guided flow: pick data, pick a shape, watch
 it learn, see what changed. No hyperparameters, four steps, ending with the network's first guess
 replayed against its last. 190 tests.
@@ -341,12 +388,12 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 7 — "Diagnostics"
+### Next: slice 8 — "The architecture editor's neighbour"
 
-Gradient flow, activation and weight histograms, a dead-unit count, and two more optimisers —
-momentum and Adam — for the training panel to offer alongside plain SGD. This is also where the
-architecture editor's neighbour, the parameter-budget readout, starts to matter: a network wide
-enough to see a histogram worth looking at is also wide enough to overfit 168 training rows.
+A parameter-budget readout beside the hidden-layer editor: a network wide enough to produce a
+histogram worth looking at is also wide enough to overfit 168 training rows, and slice 7 built the
+histograms without yet telling a reader when the network they just widened is the problem rather
+than the data.
 
 ## Invariants
 
