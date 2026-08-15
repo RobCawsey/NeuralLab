@@ -24,7 +24,7 @@ import {
 import { buildData, buildNet, type DataConfig, type NetConfig } from './build.ts';
 import type { RunPoint, TrainSetup } from '../workers/protocol.ts';
 
-export type AppStage = 'guided' | 'explorer' | 'lab';
+export type AppStage = 'guided' | 'explorer';
 export type NetKind = 'mlp' | 'som';
 
 export interface AppState {
@@ -84,8 +84,10 @@ export function evalEvery(targetSteps: number): number {
 }
 
 const DEFAULTS = {
-  // The app opens in the guided flow — §6/§13. Explorer and Lab are one click away and nothing
-  // in either is locked; this only decides what a reader sees before they have clicked anything.
+  // The app opens in the guided flow — §6/§13. Explorer is one click away and nothing in it is
+  // locked; this only decides what a reader sees before they have clicked anything. Lab was a
+  // planned third stage — retired in slice 8 once diagnostics and the architecture editor had
+  // both landed in Explorer with nothing left for a separate stage to hold.
   stage: 'guided' as AppStage,
   net: 'mlp' as NetKind,
   dataset: 'moons' as GeneratorKey,
@@ -226,7 +228,10 @@ export function readUrl(s: AppState, search: string): void {
   if (net === 'mlp' || net === 'som') s.net = net;
 
   const stage = q.get('stage');
-  if (stage === 'guided' || stage === 'explorer' || stage === 'lab') s.stage = stage;
+  // 'lab' is accepted and quietly downgraded rather than rejected — an old bookmark or shared
+  // link carrying it should still open, not fall back to the default guided flow.
+  if (stage === 'guided' || stage === 'explorer') s.stage = stage;
+  else if (stage === 'lab') s.stage = 'explorer';
 
   const act = q.get('act');
   if (act !== null && isActivation(act) && act !== 'softmax') s.hiddenAct = act;

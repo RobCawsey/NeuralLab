@@ -46,6 +46,17 @@ liable to go stale as one that names a training result, and this is the third ti
 a string like that has needed correcting. It now says only what is true today, and points at the
 weight-histogram panels slice 7 actually built as the thing to look at instead.
 
+**Lab is retired. Two stages now, not three.** The design document's original three-card split
+gave Lab the architecture editor, optimiser internals, gradient statistics, weight matrices and
+throughput counters — everything that sounded like it needed its own workbench before any of it
+existed. By this slice all of it had landed in Explorer instead, on the same reasoning each time:
+nothing about the feature actually needed to differ from Explorer, so gating a separate stage for
+it would have meant inventing a distinction that did not exist. `AppStage` drops `'lab'`, the
+toolbar button is gone, and `?stage=lab` in the URL is downgraded to `explorer` rather than
+rejected — the same defensive-read rule every other query parameter already gets, because an old
+link should still open rather than silently fall back to the default guided flow. The design
+document's Fig 8.6 mockup and the Guided/Explorer/Lab card grid are both amended to match.
+
 **Slice 7 — "Diagnostics".** Momentum and Adam join SGD in the training panel, and Explorer gained
 three panels that had been empty since slice 1: gradient flow, weight and activation histograms,
 and a dead-ReLU-unit count. 218 tests.

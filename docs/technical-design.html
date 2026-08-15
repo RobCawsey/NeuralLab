@@ -786,23 +786,35 @@ type FromWorker =
 <section id="teaching">
   <div class="sechead"><p class="eyebrow">06</p><h2>Teaching by instrument</h2></div>
   <div class="col stack">
-    <p>Three stages of the same application, switched in the toolbar, nothing locked in either
+    <p>Two stages of the same application, switched in the toolbar, nothing locked in either
     direction. A stage decides which panels are present — <code>data-stage</code> on
-    <code>&lt;body&gt;</code>, <code>.explorer-only</code> and <code>.lab-only</code> in CSS — and
-    nothing else. Switching never restarts a run.</p>
+    <code>&lt;body&gt;</code>, <code>.guided-hide</code> and <code>.guided-only</code> in CSS — and
+    nothing else. Switching never restarts a run. A planned third stage, Lab, is retired below —
+    it never had content that needed to differ from Explorer.</p>
 
-    <div class="grid g3" style="max-width:none">
+    <div class="grid g2" style="max-width:none">
       <div class="card"><h4>Guided</h4><p class="k">the first ten seconds</p>
         <p><strong>One flow per network</strong>, four steps each, no hyperparameters at all. The
         perceptron's: pick data, pick a shape, watch it learn, see what changed — ending by
         replaying its very first guess against its last. The map's: pick data, watch a flat sheet
         fold into it, see what it kept apart, label it.</p></div>
       <div class="card"><h4>Explorer</h4><p class="k">the working surface</p>
-        <p>Full controls, the diagnostics column, the decision field, the challenge track. This is
-        where somebody spends an hour.</p></div>
-      <div class="card"><h4>Lab</h4><p class="k">the workbench</p>
-        <p>Architecture editor, optimiser internals, per-layer gradient statistics, the weight
-        matrices themselves, throughput counters.</p></div>
+        <p>Full controls, the architecture editor and its parameter budget, the diagnostics
+        column, the decision field, the challenge track. This is where somebody spends an
+        hour — the only stage past Guided there is.</p></div>
+    </div>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Decided &middot; slice 8</span>
+      <p><strong>Two stages, not three. Lab is retired.</strong> The original three-card split
+      gave Lab the architecture editor, optimiser internals, gradient statistics, weight matrices
+      and throughput counters — everything that sounded like it needed its own workbench before
+      any of it existed. By slice 8 all of it had landed in Explorer instead (diagnostics in
+      slice 7, the parameter budget in slice 8), on the same reasoning each time: nothing about
+      the feature actually needed a separate stage to differ from Explorer, so gating one would
+      have meant inventing a distinction that did not exist. The toolbar button and the
+      <code>lab</code> value of <code>AppStage</code> are gone; a bookmarked <code>?stage=lab</code>
+      link still opens, downgraded to Explorer rather than rejected, the same defensive-URL rule
+      §12 states for every other query parameter.</p>
     </div>
 
     <h3>The stepper</h3>
@@ -1138,10 +1150,12 @@ type FromWorker =
   <figure style="margin-top:44px">
     <div class="mock">
       <div class="chrome"><div class="dots"><i></i><i></i><i></i></div>
-        <span class="path">neurallab.local &mdash; lab &middot; architecture</span></div>
+        <span class="path">neurallab.local &mdash; explorer &middot; architecture</span></div>
       <div class="scrollx"><div class="app" id="mk-editor"></div></div>
     </div>
-    <figcaption><b>Fig 8.6</b> The architecture editor &mdash; validation that explains why, not just refuses.</figcaption>
+    <figcaption><b>Fig 8.6</b> The architecture editor &mdash; validation that explains why, not
+    just refuses. Drawn here as its own screen; it actually lives inside Explorer &mdash; see the
+    decision below.</figcaption>
     <div class="notes">
       <div><span>1</span>Parameter count updates as you type, next to the sample count. A network with more parameters than samples is the definition of challenge 7.</div>
       <div><span>2</span>Warnings name the consequence, not the rule. "Sigmoid at depth 6" is a fact; "the input layer will receive almost no gradient" is a prediction the diagnostics panel then confirms.</div>
@@ -1151,19 +1165,18 @@ type FromWorker =
 
   <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 8 &middot; built and measured</span>
     <p><strong>Only note 1 shipped in slice 8; notes 2 and 3 describe a dedicated Lab-stage screen
-    that does not exist yet.</strong> What actually landed is narrower and sits where the editor
-    already lived — Explorer's existing hidden-layer text input and preset buttons, which have
-    added and removed layers live since slice 1. Beside the parameter and connection counts that
-    were already printed there, a third line now reads parameters against the training split's own
-    row count, and a note underneath states the consequence in either direction: room to
-    generalise, or — at <code>params &gt;= samples</code> exactly, not a softer margin — a warning
-    naming challenge 7 by number. Both are recomputed on every architecture edit, the same render
-    pass that already redraws the parameter and connection counts.</p>
-    <p>Semantic warnings like "sigmoid at depth 6" and a standalone Lab architecture screen remain
-    unbuilt. They need a place to live that is not yet built — the Lab stage itself is still a
-    toolbar button with nothing behind it — so building them now would mean designing that home
-    under a different slice's cover. They stay in the backlog against whichever slice gives Lab its
-    first real content.</p>
+    that no longer exists at all.</strong> What actually landed is narrower and sits where the
+    editor already lived — Explorer's existing hidden-layer text input and preset buttons, which
+    have added and removed layers live since slice 1. Beside the parameter and connection counts
+    that were already printed there, a third line now reads parameters against the training
+    split's own row count, and a note underneath states the consequence in either direction: room
+    to generalise, or — at <code>params &gt;= samples</code> exactly, not a softer margin — a
+    warning naming challenge 7 by number. Both are recomputed on every architecture edit, the same
+    render pass that already redraws the parameter and connection counts.</p>
+    <p>Semantic warnings like "sigmoid at depth 6" remain unbuilt, and they no longer have a
+    separate Lab screen to wait for — the decision below retires it. They stay in the backlog
+    against whichever slice next touches this panel, landing in Explorer alongside everything
+    else the moment they exist.</p>
   </div>
 
   <figure style="margin-top:44px">
@@ -1916,7 +1929,7 @@ set("mk-mlp",
 
   '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
     '<span class="seg vi"><span class="on">Perceptron</span><span>Kohonen</span></span>'+
-    '<span class="seg"><span>Guided</span><span class="on">Explorer</span><span>Lab</span></span>'+
+    '<span class="seg"><span>Guided</span><span class="on">Explorer</span></span>'+
     '<button class="btn pri">Pause</button><button class="btn">Reset</button>'+
     '<span class="seg"><span class="on">2D</span><span>3D</span></span>'+
     '<button class="btn">Challenges</button>'+
@@ -2070,7 +2083,7 @@ set("mk-som",
 
   '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
     '<span class="seg cy"><span>Perceptron</span><span class="on">Kohonen</span></span>'+
-    '<span class="seg"><span>Guided</span><span class="on">Explorer</span><span>Lab</span></span>'+
+    '<span class="seg"><span>Guided</span><span class="on">Explorer</span></span>'+
     '<button class="btn pri">Pause</button><button class="btn">Reset</button>'+
     '<span class="seg"><span class="on">2D</span><span>3D</span></span>'+
     '<button class="btn">Challenges</button>'+
@@ -2202,7 +2215,7 @@ set("mk-guided",
   "grid-template-columns:262px minmax(0,1fr) 262px;grid-template-rows:42px minmax(0,1fr);height:432px",
 
   '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
-    '<span class="seg"><span class="on">Guided</span><span>Explorer</span><span>Lab</span></span>'+
+    '<span class="seg"><span class="on">Guided</span><span>Explorer</span></span>'+
     '<span class="sp"></span><span class="chip">step 3 of 4</span>'+
     '<button class="btn gh">Skip to the full app</button></div>'+
 
@@ -2272,7 +2285,7 @@ set("mk-editor",
   "grid-template-columns:300px minmax(0,1fr);grid-template-rows:42px minmax(0,1fr);height:482px",
 
   '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
-    '<span class="seg"><span>Guided</span><span>Explorer</span><span class="on">Lab</span></span>'+
+    '<span class="seg"><span>Guided</span><span class="on">Explorer</span></span>'+
     '<span class="sp"></span><span class="chip bad">edits pending</span></div>'+
 
   '<div class="pnl l">'+
@@ -2359,7 +2372,7 @@ set("mk-track",
   "grid-template-columns:288px minmax(0,1fr);grid-template-rows:42px minmax(0,1fr);height:434px",
 
   '<div class="tb"><span class="brand">Neural<em>lab</em></span>'+
-    '<span class="seg"><span>Guided</span><span class="on">Explorer</span><span>Lab</span></span>'+
+    '<span class="seg"><span>Guided</span><span class="on">Explorer</span></span>'+
     '<span class="sp"></span><span class="chip ok">5 of 12 concepts</span>'+
     '<button class="btn">Help</button></div>'+
 

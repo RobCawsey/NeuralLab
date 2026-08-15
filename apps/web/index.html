@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NeuralLab — slice 6</title>
+    <title>NeuralLab — slice 8</title>
     <link rel="icon" href="data:," />
     <style>
       :root {
@@ -197,14 +197,14 @@
       .diag-dead { color: var(--bad) !important; }
 
       /*
-        Stage gating — Guided / Explorer / Lab, decided by `body[data-stage]`.
+        Stage gating — Guided / Explorer, decided by `body[data-stage]`.
 
-        Only two rules, not Evolab's three-way `.explorer-only`/`.lab-only`, because Lab has no
-        content of its own yet — the architecture editor and diagnostics arrive in slices 7-8.
-        Until one of them actually needs to differ from Explorer, inventing that split here would
-        be gating for a distinction that does not exist. `.guided-hide` is everything the full
-        controls show that a first run does not need; `.guided-only` is the flow itself. Neither
-        panel is ever destroyed by switching stage — the same `AppState` is underneath both.
+        Two stages, not three. A planned third — Lab, for the architecture editor and diagnostics
+        — never got content of its own: both landed in Explorer instead (slices 7-8), and the
+        toolbar button was retired in slice 8 rather than kept as a click that changes nothing.
+        `.guided-hide` is everything the full controls show that a first run does not need;
+        `.guided-only` is the flow itself. Neither panel is ever destroyed by switching stage —
+        the same `AppState` is underneath both.
       */
       body[data-stage="guided"] .guided-hide { display: none; }
       body:not([data-stage="guided"]) .guided-only { display: none; }
@@ -381,7 +381,6 @@
       <span class="seg" id="stages">
         <button id="stage-guided" class="on">Guided</button>
         <button id="stage-explorer">Explorer</button>
-        <button id="stage-lab">Lab</button>
       </span>
       <button id="btn-train" class="pri" title="Start or pause training (Space)">Train</button>
       <button id="btn-step" title="One minibatch step (.)">Step</button>
@@ -402,7 +401,7 @@
           The guided flow — §6/§13 of the design document. Present only in the guided stage;
           `body[data-stage]` decides which of this block and the controls below it is shown, and
           neither is ever destroyed by switching, so the app state underneath is exactly the same
-          state Explorer and Lab read.
+          state Explorer reads.
         -->
         <div id="guided" class="guided-only"></div>
 
