@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Rng, type Dataset } from '@neurallab/core';
 import { createSom } from '../src/som.ts';
-import { quantisationError, topographicError, uMatrix } from '../src/metrics.ts';
+import { componentPlane, quantisationError, topographicError, uMatrix } from '../src/metrics.ts';
 
 function pointDataset(points: readonly number[]): Dataset {
   return {
@@ -64,5 +64,26 @@ describe('uMatrix', () => {
   it('reads 0 for a node with no neighbours at all — a 1×1 map', () => {
     const som = createSom(1, 1, 2, 'hex', new Rng(1));
     expect(Array.from(uMatrix(som))).toEqual([0]);
+  });
+});
+
+describe('componentPlane', () => {
+  it('pulls out exactly one dimension across every node', () => {
+    // 2×1 map, dim 2: node0 = (0.1, 0.9), node1 = (0.2, 0.8).
+    const som = createSom(2, 1, 2, 'rect', new Rng(1));
+    som.W.set([0.1, 0.9, 0.2, 0.8]);
+    expect(Array.from(componentPlane(som, 0))).toEqual([
+      Math.fround(0.1),
+      Math.fround(0.2),
+    ]);
+    expect(Array.from(componentPlane(som, 1))).toEqual([
+      Math.fround(0.9),
+      Math.fround(0.8),
+    ]);
+  });
+
+  it('is all zero for a dimension out of range, rather than throwing', () => {
+    const som = createSom(2, 1, 2, 'rect', new Rng(1));
+    expect(Array.from(componentPlane(som, 5))).toEqual([0, 0]);
   });
 });

@@ -18,6 +18,55 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 10 — "Reading a map".** The Kohonen switch has something behind it now: a full second
+Explorer, the lattice drawn hex or rect with nodes filled by their own weight vector, a QE/TE
+chart, the U-matrix and component planes as `ImageData` blits, and controls for dataset, lattice
+size, topology and schedule. Two parallel DOM trees gated by `body[data-net]`, the same pattern
+`data-stage` already used for Guided/Explorer, so switching networks destroys neither side's
+state. 273 tests.
+
+**Trained on the main thread, and measured before deciding that, not assumed.** A SOM step has no
+backward pass — a nearest-node search and a linear pull over at most a few hundred prototypes —
+and benchmarks at roughly 240 000 steps/s on a 12×12 map, about twenty times the MLP's own
+pre-worker throughput. A full 20 000-step run finishes in under 100ms of raw compute, so nothing
+here would be bought back by a worker. The pacing a reader actually sees — a run visibly organising
+over about two seconds regardless of its step count — is a fixed 120-tick schedule, not a
+performance constraint.
+
+**That decision immediately re-triggered slice 3's exact bug, and running it live is what caught
+it.** The first version paced those ticks with `requestAnimationFrame`, which does not fire in a
+hidden tab — precisely the limitation slice 4's worker was built to escape for the MLP, reintroduced
+by choosing not to build one here. Verified live: `document.hidden` was `true` in the very
+environment used to test this, and training sat at step 0 indefinitely. Fixed by switching to
+`setTimeout`, which browsers throttle in the background rather than suspending outright — a run
+paces slower while nobody is watching and still finishes, rather than never finishing at all.
+
+**A second bug in the same loop: the "finished" render ran one step too early.** `s.running` was
+set to `false` *after* the pump's own `render()` call rather than before it, so the final frame of
+a completed run painted with the Train button still reading "Pause" and the badge still reading
+"training" — correct only once some *other* render happened to fire afterwards, which nothing did.
+Moving the finished-check before that last render fixed it; the general lesson, restated from the
+MLP side's own ordering bugs, is that anything a render reads has to be settled before the render
+runs, not after.
+
+**A third bug had nothing to do with training at all: `#som-lattice` was invisible at its actual
+size.** `resize()` measures a canvas's CSS box, and the project's existing rule that gives `#stage`
+and `#graph` `width/height: 100%` is scoped to those two ids specifically — a new canvas id needs
+adding to it explicitly, or it falls back to the browser default of 300×150 and every draw call
+still succeeds, quietly, into a box a tenth the size of its panel. Caught by screenshot, not by any
+test, because nothing about a wrong CSS rule throws.
+
+**SOM datasets are mostly the MLP's own generators, reused unsupervised.** `colourCube` is the one
+built for this half specifically, but moons/circles/blobs/spirals/XOR all already produce a
+`Dataset`, and a SOM simply never reads `y` — §3's rule that "unlabelled" describes training, not
+the file, made this free rather than five new generators to write and verify.
+
+**Weight-to-colour is literal for the colour cube and a documented stand-in otherwise, with real
+projection deferred on purpose.** Three weights map straight to r/g/b when `dim` is 3; below that
+a fixed mid-tone fills the missing channels. Nothing in the current dataset roster exceeds three
+dimensions — the one that will (digits, dim 64) arrives in slice 16 — so a real PCA projection has
+no data to be wrong against yet and stays out until it does.
+
 **Slice 9 — "Kohonen kernel".** `packages/som`: the hex lattice, axial coordinates, BMU, the
 neighbourhood function, three decay schedules, quantisation error, topographic error, the
 U-matrix, and a golden run — a 12×12 hex map ordering itself on the colour cube, printed as real
@@ -488,15 +537,15 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 10 — "Reading a map"
+### Next: slice 11 — "The SOM stepper, and the second guided flow"
 
-The SOM instrument column: U-matrix and component planes as `ImageData` blits (the same code path
-slice 3 built for the decision field), QE and TE charted together so a reader can watch them
-diverge, and the network switch finally has something behind it — this is where `net-som`'s
-disabled button and its "nothing in the app uses it yet" tooltip stop being true. Labels arrive
-too, for the datasets that have them held back (§3's "unlabelled is a fact about training, not
-about the file"). The guided flow for the map waits one slice further, for slice 11, once the
-U-matrix — its own step 3 — exists to guide someone through.
+BMU and neighbourhood drawn side by side with input space — the map's answer to the MLP's
+step-through-backprop screen — plus the second `GuidedFlow`: pick data, watch a flat sheet fold
+into it, see which regions the map kept apart, label it. Its own step 3 *is* the U-matrix slice 10
+just built, which is why the flow waits for this slice rather than arriving with slice 6's. Labels
+for the datasets that have them held back — colour cube has none to show, but iris and animals will
+— are still open; §3's "unlabelled is a fact about training, not about the file" says the data was
+always ready for this, only the panel wasn't.
 
 ## Invariants
 

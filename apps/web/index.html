@@ -179,7 +179,7 @@
       .kv b.bad { color: var(--bad); }
       .divide { height: 1px; background: var(--line); margin: 3px 0; }
       /* flex: none — a shrinkable canvas renders shorter than its declared height. */
-      #chart { display: block; flex: none; width: 100%; height: 150px; }
+      #chart, #som-chart { display: block; flex: none; width: 100%; height: 150px; }
       .gauge { height: 4px; border-radius: 3px; background: var(--line); overflow: hidden; flex: none; }
       .gauge i { display: block; height: 100%; background: var(--amber); border-radius: 3px; }
       .badge.training { color: var(--amber); border-color: #4a3b1f; }
@@ -208,6 +208,19 @@
       */
       body[data-stage="guided"] .guided-hide { display: none; }
       body:not([data-stage="guided"]) .guided-only { display: none; }
+
+      /*
+        Network gating — MLP / SOM, decided by `body[data-net]`. Same shape as the stage gate
+        above: two parallel DOM trees inside the same grid cells, one hidden by CSS rather than
+        rebuilt, so switching never destroys either side's state (§12, restated for a second
+        network). `.mlp-panel`/`.som-panel` mark direct content; `.mlp-panel-flex` is the same
+        idea for a `.stage-wrap` child that must not introduce its own flex box — see below.
+      */
+      body[data-net="som"] .mlp-panel { display: none; }
+      body[data-net="mlp"] .som-panel { display: none; }
+      body[data-net="som"] .mlp-panel-flex { display: none; }
+      body[data-net="mlp"] .som-panel-flex { display: none; }
+      .mlp-panel-flex, .som-panel-flex { display: contents; }
 
       /* The guided flow — §6 of the design document. */
       #guided { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 10px; }
@@ -351,7 +364,7 @@
         is about.
       */
       .stage-box.graph { flex: 1.35; border-bottom: 1px solid var(--line); }
-      #stage, #graph { display: block; width: 100%; height: 100%; }
+      #stage, #graph, #som-lattice { display: block; width: 100%; height: 100%; }
       #graph { cursor: crosshair; }
       #stage { cursor: crosshair; }
       #hud {
@@ -376,7 +389,7 @@
       <span class="brand">Neural<em>lab</em></span>
       <span class="seg nets" id="nets">
         <button id="net-mlp" class="on" title="Multilayer perceptron">Perceptron</button>
-        <button id="net-som" title="Kohonen map — the kernel exists (packages/som); nothing in the app uses it yet" disabled>Kohonen</button>
+        <button id="net-som" title="Kohonen self-organising map">Kohonen</button>
       </span>
       <span class="seg" id="stages">
         <button id="stage-guided" class="on">Guided</button>
@@ -397,6 +410,7 @@
       <div class="scrim" id="scrim" hidden></div>
 
       <aside class="left" id="panel-left">
+        <div class="mlp-panel">
         <!--
           The guided flow — §6/§13 of the design document. Present only in the guided stage;
           `body[data-stage]` decides which of this block and the controls below it is shown, and
@@ -483,9 +497,74 @@
             <div class="note" id="lr-note" style="padding:0"></div>
           </div>
         </div>
+        </div>
+
+        <div class="som-panel">
+          <div class="ph">Data<span class="sp"></span><em id="som-ph-data">colour cube</em></div>
+          <div class="pb">
+            <label class="sl-head" for="som-i-dataset">set</label>
+            <select id="som-i-dataset"></select>
+            <div class="sl">
+              <span class="sl-name">samples</span>
+              <input type="range" id="som-i-n" min="100" max="3000" step="50" value="1500" />
+              <b class="sl-val" id="som-v-n">1500</b>
+            </div>
+            <div class="sl">
+              <span class="sl-name">seed</span>
+              <input type="range" id="som-i-seed" min="1" max="9999" step="1" value="4417" />
+              <b class="sl-val" id="som-v-seed">4417</b>
+            </div>
+          </div>
+
+          <div class="ph">Lattice<span class="sp"></span><em id="som-ph-lattice">12×12 hex</em></div>
+          <div class="pb">
+            <div class="sl">
+              <span class="sl-name">columns</span>
+              <input type="range" id="som-i-cols" min="4" max="20" step="1" value="12" />
+              <b class="sl-val" id="som-v-cols">12</b>
+            </div>
+            <div class="sl">
+              <span class="sl-name">rows</span>
+              <input type="range" id="som-i-rows" min="4" max="20" step="1" value="12" />
+              <b class="sl-val" id="som-v-rows">12</b>
+            </div>
+            <label class="sl-head" for="som-topology">topology</label>
+            <div class="seg" id="som-topology">
+              <button id="som-topo-hex" class="on" title="Six neighbours, all at distance 1">Hex</button>
+              <button id="som-topo-rect" title="Four neighbours at distance 1, four more at √2">Rect</button>
+            </div>
+            <button id="som-btn-reinit" style="width:100%">Reinitialise weights</button>
+          </div>
+
+          <div class="ph">Training<span class="sp"></span><em id="som-ph-decay">exponential</em></div>
+          <div class="pb">
+            <label class="sl-head" for="som-decay">decay</label>
+            <div class="seg" id="som-decay">
+              <button id="som-decay-exponential" class="on" title="v0 · e⁻³ᵗ/ˢᵗᵉᵖˢ — about 5% remaining at the horizon">Exp</button>
+              <button id="som-decay-linear" title="Reaches its floor exactly at the horizon">Linear</button>
+              <button id="som-decay-inverse" title="v0 / (1 + t/steps) — never quite reaches zero">Inverse</button>
+            </div>
+            <div class="sl">
+              <span class="sl-name">α₀</span>
+              <input type="range" id="som-i-alpha0" min="0.01" max="1" step="0.01" value="0.5" />
+              <b class="sl-val" id="som-v-alpha0">0.50</b>
+            </div>
+            <div class="sl">
+              <span class="sl-name">σ₀</span>
+              <input type="range" id="som-i-sigma0" min="0.5" max="20" step="0.5" value="6" />
+              <b class="sl-val" id="som-v-sigma0">6.0</b>
+            </div>
+            <div class="sl">
+              <span class="sl-name">steps</span>
+              <input type="range" id="som-i-steps" min="2" max="4.301" step="0.02" value="3.477" />
+              <b class="sl-val" id="som-v-steps">3,000</b>
+            </div>
+          </div>
+        </div>
       </aside>
 
       <div class="stage-wrap">
+        <div class="mlp-panel-flex">
         <div class="stage-box graph">
           <canvas id="graph"></canvas>
           <div class="badge" id="graph-badge">random weights</div>
@@ -500,9 +579,18 @@
           </div>
           <div class="badge" id="field-badge">64² · —</div>
         </div>
+        </div>
+
+        <div class="som-panel-flex">
+        <div class="stage-box" style="flex:1">
+          <canvas id="som-lattice"></canvas>
+          <div class="badge" id="som-badge">random weights</div>
+        </div>
+        </div>
       </div>
 
       <aside class="right" id="panel-right">
+        <div class="mlp-panel">
         <div class="ph">Loss<span class="sp"></span><em id="ph-chart">step 0</em></div>
         <canvas id="chart"></canvas>
         <div class="legend">
@@ -570,6 +658,38 @@
           <div class="note">
             Fitted over the <em>training rows only</em>, and the network sees standardised inputs —
             so the probe is converted before the forward pass, not after.
+          </div>
+        </div>
+        </div>
+
+        <div class="som-panel">
+          <div class="ph">Quantisation / topographic error<span class="sp"></span><em id="som-ph-chart">step 0</em></div>
+          <canvas id="som-chart"></canvas>
+          <div class="legend">
+            <s style="color:var(--amber)">▬ quantisation</s>
+            <s style="color:var(--cyan)">▬ topographic</s>
+          </div>
+          <div class="pb">
+            <div class="kv"><span>step</span><b class="am" id="som-s-step">0 / 3,000</b></div>
+            <span class="gauge"><i id="som-s-progress" style="width:0%"></i></span>
+            <div class="kv"><span>quantisation error</span><b class="am" id="som-s-qe">—</b></div>
+            <div class="kv"><span>topographic error</span><b class="cy" id="som-s-te">—</b></div>
+            <div class="divide"></div>
+            <div class="kv"><span>steps / s</span><b id="som-s-sps">—</b></div>
+          </div>
+          <div class="note" id="som-run-note"></div>
+
+          <div class="ph">U-matrix<span class="sp"></span><em>distance to lattice neighbours, max <span id="som-umatrix-max">—</span></em></div>
+          <div class="pb"><canvas id="som-umatrix" class="diag-hist" style="height:120px"></canvas></div>
+
+          <div class="ph">Component planes<span class="sp"></span><em id="som-ph-planes">3 dims</em></div>
+          <div class="pb" id="som-planes"></div>
+
+          <div class="ph">Dataset<span class="sp"></span><em id="som-ph-seed">seed 4417</em></div>
+          <div class="pb">
+            <div class="kv"><span>total</span><b id="som-s-total">—</b></div>
+            <div class="kv"><span>nodes</span><b id="som-s-nodes">—</b></div>
+            <div class="kv"><span>max hits</span><b class="am" id="som-s-maxhit">—</b></div>
           </div>
         </div>
       </aside>

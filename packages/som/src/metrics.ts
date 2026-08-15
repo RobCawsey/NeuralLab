@@ -84,6 +84,20 @@ export function uMatrix(som: Som): Float32Array {
   return out;
 }
 
+/**
+ * One input dimension's weight, across every node — a component plane. §3's answer to reading a
+ * map with more than three dimensions: the U-matrix shows where the data has gaps, and a plane
+ * per feature shows how that one feature varies across the lattice, which together is how a
+ * 13-dimensional map becomes readable without ever drawing 13 dimensions at once.
+ */
+export function componentPlane(som: Som, dim: number): Float32Array {
+  const n = som.cols * som.rows;
+  const out = new Float32Array(n);
+  if (dim < 0 || dim >= som.dim) return out;
+  for (let i = 0; i < n; i++) out[i] = som.W[i * som.dim + dim] as number;
+  return out;
+}
+
 function nodeDistance(som: Som, a: number, b: number): number {
   const baseA = a * som.dim;
   const baseB = b * som.dim;

@@ -859,6 +859,43 @@ type FromWorker =
       §12 states for every other query parameter.</p>
     </div>
 
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 10 &middot; built and measured</span>
+      <p><strong>The Kohonen switch has a real Explorer behind it, built the same way Guided and
+      Explorer already were: two DOM trees in the same grid cells, gated by
+      <code>body[data-net]</code> instead of <code>body[data-stage]</code>, neither ever destroyed
+      by switching.</strong> The lattice draws hex or rect with nodes filled by their own weight
+      vector, a QE/TE chart, the U-matrix and component planes as <code>ImageData</code> blits —
+      the same technique §7's table already named for them — and controls for dataset, lattice
+      size, topology and schedule.</p>
+      <p><strong>Trained on the main thread, and measured before deciding that, not assumed.</strong>
+      A SOM step has no backward pass, and benchmarks at roughly 240 000 steps/s on a 12&times;12
+      map — about twenty times the MLP's own pre-worker throughput, and fast enough that a full
+      20 000-step run finishes in under 100&nbsp;ms of raw compute. Nothing here would be bought
+      back by a worker; the visible pacing (a run organising over about two seconds regardless of
+      its step count) is a fixed 120-tick schedule, not a performance constraint.</p>
+      <p><strong>That decision re-triggered slice 3's exact bug, and running it live is what caught
+      it.</strong> The first version paced ticks with <code>requestAnimationFrame</code>, which does
+      not fire in a hidden tab — precisely the limitation slice 4's worker exists to escape for the
+      MLP, reintroduced here by choosing not to build one. Fixed by switching to
+      <code>setTimeout</code>, throttled rather than suspended in the background: a run paces
+      slower while nobody is watching and still finishes, rather than never finishing at all.</p>
+      <p>Two smaller bugs, both found the same way — running it rather than reading it back.
+      <strong>The "finished" render ran one step early</strong>: <code>running</code> was cleared
+      after the pump's own final render rather than before it, so the last frame of a completed run
+      painted with the Train button still reading "Pause". <strong>The lattice canvas was invisible
+      at its actual size</strong>: <code>resize()</code> measures a canvas's CSS box, and the rule
+      giving <code>#stage</code>/<code>#graph</code> <code>width/height: 100%</code> was scoped to
+      those two ids specifically, so a new canvas id defaulted to the browser's 300&times;150 and
+      drew correctly into a box a tenth the size of its panel. Neither is the kind of bug a test
+      catches; both were caught by looking at the screen.</p>
+      <p><strong>SOM datasets are mostly the MLP's own generators, reused unsupervised</strong> —
+      moons, circles, blobs, spirals and XOR all already produce a <code>Dataset</code>, and a SOM
+      simply never reads <code>y</code>, so five new generators were not needed to give the picker
+      real variety beside the colour cube. Weight-to-colour is literal at three dimensions and a
+      documented mid-tone stand-in below it; nothing in the current roster exceeds three, so a real
+      projection is deferred rather than built against no data that needs it yet.</p>
+    </div>
+
     <h3>The stepper</h3>
     <p>The teaching screen, and the single most important thing in the project. A full-screen
     view that pauses the algorithm between operators and shows each one acting on real values.</p>

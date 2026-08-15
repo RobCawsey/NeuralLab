@@ -14,11 +14,10 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 9 of 16 — the Kohonen kernel.** `packages/som` exists: the hex lattice, best-matching
-unit, neighbourhood function, decay schedules, quantisation and topographic error, the U-matrix,
-and a golden run — a 12×12 map ordering itself on the colour cube, printed as real terminal colour
-by `npm run som`. Pure and headless, same as the MLP kernel was through slice 2; nothing in the
-app uses it yet.
+**Slice 10 of 16 — reading a map.** The Kohonen switch has a real Explorer behind it now: the
+lattice drawn hex or rect with nodes filled by their own weight vector, a quantisation/topographic
+error chart, the U-matrix and component planes, and controls for dataset, lattice size, topology
+and schedule. Trained on the main thread — measured at ~240,000 steps/s, no worker needed.
 
 ## Getting started
 
@@ -30,7 +29,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 265 tests, ~3.7 s
+npm test       # 273 tests, ~3.6 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the MLP golden run, plus challenges 1 and 3, all asserted

@@ -17,4 +17,4 @@ export {
   type Som,
 } from './som.ts';
 export { createSomTrainer, somStep, type SomTrainer, type StepResult } from './train.ts';
-export { quantisationError, topographicError, uMatrix } from './metrics.ts';
+export { componentPlane, quantisationError, topographicError, uMatrix } from './metrics.ts';

@@ -52,11 +52,38 @@ import {
   writeUrl,
   type AppStage,
 } from './run/state.ts';
+import {
+  createSomState,
+  isSomDatasetKey,
+  readSomUrl,
+  rebuildSom,
+  rebuildSomData,
+  runSomSteps,
+  writeSomUrl,
+  SOM_DATASETS,
+} from './run/somState.ts';
+import { layoutLattice, hitLatticeNode, type LatticeLayout } from './render/lattice-layout.ts';
+import { drawLattice } from './render/lattice.ts';
+import { drawHeatgrid } from './render/heatgrid.ts';
+import { drawSomChart } from './render/somchart.ts';
+import { componentPlane, uMatrix } from '@neurallab/som';
 
 const state = createState();
 readUrl(state, window.location.search);
 rebuildData(state);
 rebuildNet(state);
+
+const somState = createSomState();
+readSomUrl(somState, window.location.search);
+rebuildSomData(somState);
+rebuildSom(somState);
+
+/** Everything the URL needs from both networks — disjoint key prefixes, one query string. */
+function syncUrl(): string {
+  const q = new URLSearchParams(writeUrl(state).slice(1));
+  writeSomUrl(somState, q);
+  return '?' + q.toString();
+}
 
 let camera: Camera | null = null;
 let hover: number | null = null;
@@ -99,6 +126,7 @@ const $ = <T extends HTMLElement>(id: string): T => {
 const stage = $<HTMLCanvasElement>('stage');
 const graph = $<HTMLCanvasElement>('graph');
 const chart = $<HTMLCanvasElement>('chart');
+const somLattice = $<HTMLCanvasElement>('som-lattice');
 
 /* ---------------- the worker ---------------- */
 
@@ -279,7 +307,7 @@ function slider(
   input.addEventListener('input', () => {
     write(Number(input.value));
     output.textContent = format(read());
-    history.replaceState(null, '', writeUrl(state));
+    history.replaceState(null, '', syncUrl());
     after();
   });
 }
@@ -702,6 +730,11 @@ function refreshField(camera: Camera, width: number, height: number): void {
 }
 
 function render(): void {
+  if (state.net === 'som') {
+    renderSom();
+    return;
+  }
+
   const out = evaluateProbe(state);
   const input = probeInput(state);
 
@@ -750,6 +783,213 @@ function render(): void {
   renderRunPanels();
   renderDiagnostics();
   guided.render();
+}
+
+/* ---------------- SOM ---------------- */
+
+/** Cached every render, for `moveSomProbe`'s hit-testing — the lattice's answer to `camera`. */
+let somLatticeLayout: LatticeLayout | null = null;
+
+function renderSom(): void {
+  const s = somState;
+
+  const latticeFit = resize($('som-lattice'));
+  if (latticeFit) {
+    somLatticeLayout = layoutLattice(s.som.cols, s.som.rows, s.som.topology, latticeFit.w, latticeFit.h);
+    drawLattice(latticeFit.ctx, s.som, somLatticeLayout, latticeFit.w, latticeFit.h, {
+      bmu: s.lastBmu,
+      hover: s.hoverNode,
+    });
+  }
+
+  const chartFit = resize($('som-chart'));
+  if (chartFit) drawSomChart(chartFit.ctx, s.history, chartFit.w, chartFit.h, s.targetSteps);
+
+  const umatrixFit = resize($('som-umatrix'));
+  const umatrixMax = umatrixFit
+    ? drawHeatgrid(umatrixFit.ctx, uMatrix(s.som), s.cols, s.rows, umatrixFit.w, umatrixFit.h, [233, 161, 59])
+    : 0;
+  $('som-umatrix-max').textContent = umatrixMax.toFixed(3);
+
+  renderSomPlanes();
+  renderSomStats();
+}
+
+/** One small heatmap per input dimension — §3's answer to reading a map above 3 dimensions. */
+function renderSomPlanes(): void {
+  const s = somState;
+  const host = $('som-planes');
+  host.replaceChildren();
+  for (let k = 0; k < s.som.dim; k++) {
+    const block = document.createElement('div');
+    block.className = 'diag-block';
+    const label = document.createElement('span');
+    label.className = 'diag-lb';
+    label.textContent = s.data.featureNames[k] ?? `dim ${k}`;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'diag-hist';
+    block.append(label, canvas);
+    host.append(block);
+    // Same reason as the diagnostics histograms: the canvas has no CSS box to measure until it
+    // is in the document, so `resize` is deferred one microtask past the append.
+    queueMicrotask(() => {
+      const fit = resize(canvas);
+      if (fit) drawHeatgrid(fit.ctx, componentPlane(s.som, k), s.cols, s.rows, fit.w, fit.h, [139, 123, 216]);
+    });
+  }
+}
+
+/**
+ * Every text readout and control that has to agree with `somState` on every render — the same
+ * rule slice 6 learned for the MLP side: a control set from somewhere other than its own event
+ * listener must be resynced here, or it goes stale the first time state changes any other way.
+ */
+function renderSomStats(): void {
+  const s = somState;
+  const last = s.history[s.history.length - 1];
+  const step = s.trainer.step;
+  const finished = step >= s.targetSteps;
+
+  $('som-ph-chart').textContent = `step ${step}`;
+  $('som-s-step').textContent = `${step} / ${s.targetSteps}`;
+  $<HTMLElement>('som-s-progress').style.width = `${Math.min(100, (step / Math.max(1, s.targetSteps)) * 100)}%`;
+  $('som-s-qe').textContent = last ? last.qe.toFixed(4) : '—';
+  $('som-s-te').textContent = last ? last.te.toFixed(4) : '—';
+  $('som-s-sps').textContent = s.stepsPerSecond > 0 ? Math.round(s.stepsPerSecond).toLocaleString() : '—';
+  $('som-s-total').textContent = String(s.data.n);
+  $('som-s-nodes').textContent = String(s.som.cols * s.som.rows);
+  $('som-s-maxhit').textContent = String(Math.max(0, ...Array.from(s.som.hits)));
+
+  $<HTMLSelectElement>('som-i-dataset').value = s.dataset;
+  $('som-ph-data').textContent = SOM_DATASETS[s.dataset].label;
+  $('som-ph-seed').textContent = `seed ${s.seed}`;
+  $('som-ph-lattice').textContent = `${s.cols}×${s.rows} ${s.topology}`;
+  $('som-ph-decay').textContent = s.decay;
+  $('som-ph-planes').textContent = `${s.som.dim} dim${s.som.dim === 1 ? '' : 's'}`;
+
+  for (const b of Array.from($('som-topology').querySelectorAll('button'))) {
+    b.classList.toggle('on', b.id === `som-topo-${s.topology}`);
+  }
+  for (const b of Array.from($('som-decay').querySelectorAll('button'))) {
+    b.classList.toggle('on', b.id === `som-decay-${s.decay}`);
+  }
+
+  const btn = $<HTMLButtonElement>('btn-train');
+  btn.textContent = s.running ? 'Pause' : finished ? 'Done' : 'Train';
+  btn.disabled = finished && !s.running;
+  // The stepper is a recording of an MLP `trainStep` — nothing here produces one yet, so the
+  // button that opens it has nothing to show and is disabled rather than silently broken.
+  $<HTMLButtonElement>('btn-stepper').disabled = true;
+
+  const badge = $('som-badge');
+  badge.classList.toggle('training', s.running);
+  badge.classList.toggle('done', finished);
+  badge.textContent = s.running ? 'training' : step === 0 ? 'random weights' : finished ? 'finished' : 'paused';
+
+  const note = $('som-run-note');
+  if (!last || step === 0) {
+    note.innerHTML =
+      'Nothing trained yet. Press <em>Train</em>, or <em>Step</em> to advance one sample at a ' +
+      'time and watch the lattice move.';
+  } else if (finished) {
+    note.innerHTML =
+      `Finished at step <em>${step}</em>. Quantisation error <em>${last.qe.toFixed(4)}</em>, ` +
+      `topographic error <em>${last.te.toFixed(4)}</em>.`;
+  } else {
+    note.innerHTML =
+      `Quantisation error <em>${last.qe.toFixed(4)}</em>, topographic error ` +
+      `<em>${last.te.toFixed(4)}</em>.`;
+  }
+}
+
+/**
+ * The main-thread training loop — see `run/somState.ts` for why this does not need a worker.
+ *
+ * Paced at a fixed number of ticks rather than a fixed number of steps per tick: a 20 000-step
+ * run and a 500-step run both finish in about two seconds of visible motion, because the point is
+ * watching the lattice organise, not the steps themselves. A worker's chunk is sized by a time
+ * budget for the same reason the MLP's is 40 ms; this one is sized by tick count for a reason
+ * specific to a run that is fast enough to have no *other* constraint.
+ *
+ * **`setTimeout`, not `requestAnimationFrame` — found by running it, not chosen up front.** The
+ * first version used `requestAnimationFrame` and hung at step 0 the moment the tab lost paint
+ * visibility, exactly the limitation §3/slice 3 hit for the MLP before slice 4 moved training to
+ * a worker: `rAF` simply does not fire in a hidden tab. Reintroducing that limitation on purpose
+ * would be an odd way to have learned it once already. `setTimeout` is not exempt from background
+ * throttling either — browsers clamp it to roughly one tick a second once hidden — but "paces
+ * slower while nobody is watching" is correct behaviour; "never moves again" is not.
+ */
+const SOM_TICKS = 120;
+const SOM_TICK_MS = 16;
+let somTimer: ReturnType<typeof setTimeout> | null = null;
+
+function somPump(): void {
+  const s = somState;
+  if (!s.running) {
+    somTimer = null;
+    return;
+  }
+  const target = s.targetSteps;
+  const already = s.trainer.step;
+  if (already >= target) {
+    s.running = false;
+    somTimer = null;
+    render();
+    return;
+  }
+
+  const perTick = Math.max(1, Math.ceil(target / SOM_TICKS));
+  const untilStep = Math.min(target, already + perTick);
+  const started = performance.now();
+  runSomSteps(s, untilStep);
+  const elapsed = (performance.now() - started) / 1000;
+  if (elapsed > 0) s.stepsPerSecond = (untilStep - already) / elapsed;
+
+  // Finished-ness has to be settled *before* this pump's own render, or the last frame of a run
+  // paints with `running` still true — "training" forever, one render short of correct — and
+  // nothing schedules the render that would have fixed it, because nothing schedules another tick.
+  if (s.trainer.step >= target) {
+    s.running = false;
+    somTimer = null;
+    render();
+    return;
+  }
+
+  render();
+  somTimer = setTimeout(somPump, SOM_TICK_MS);
+}
+
+function setSomRunning(on: boolean): void {
+  const s = somState;
+  if (on && s.trainer.step >= s.targetSteps) return;
+  s.running = on;
+  if (on && somTimer === null) somTimer = setTimeout(somPump, SOM_TICK_MS);
+  render();
+}
+
+function somStepOnce(): void {
+  const s = somState;
+  if (s.trainer.step >= s.targetSteps) return;
+  s.running = false;
+  runSomSteps(s, s.trainer.step + 1);
+  render();
+}
+
+function regenerateSomData(): void {
+  setSomRunning(false);
+  rebuildSomData(somState);
+  rebuildSom(somState);
+  somState.hoverNode = -1;
+  render();
+  history.replaceState(null, '', syncUrl());
+}
+
+function regenerateSom(): void {
+  setSomRunning(false);
+  rebuildSom(somState);
+  somState.hoverNode = -1;
+  render();
+  history.replaceState(null, '', syncUrl());
 }
 
 /** The probe itself, drawn over the scatter as a ring in the predicted class's colour. */
@@ -820,7 +1060,7 @@ function rebuildEverything(options: { data: boolean }): void {
   if (options.data) renderDataPanels();
   renderNetPanels();
   render();
-  history.replaceState(null, '', writeUrl(state));
+  history.replaceState(null, '', syncUrl());
 }
 
 function regenerateData(): void {
@@ -921,6 +1161,29 @@ graph.addEventListener('pointerleave', () => {
   }
 });
 
+somLattice.addEventListener('pointermove', (event) => {
+  const rect = somLattice.getBoundingClientRect();
+  const layout = layoutLattice(
+    somState.som.cols,
+    somState.som.rows,
+    somState.som.topology,
+    somLattice.clientWidth,
+    somLattice.clientHeight,
+  );
+  const found = hitLatticeNode(layout, event.clientX - rect.left, event.clientY - rect.top);
+  if (found !== somState.hoverNode) {
+    somState.hoverNode = found;
+    render();
+  }
+});
+
+somLattice.addEventListener('pointerleave', () => {
+  if (somState.hoverNode !== -1) {
+    somState.hoverNode = -1;
+    render();
+  }
+});
+
 /* ---------------- narrow chassis ---------------- */
 
 function drawer(buttonId: string, panelId: string): void {
@@ -1001,13 +1264,14 @@ function boot(): void {
   segment('stages', (id) => {
     state.stage = id.replace('stage-', '') as AppStage;
     document.body.dataset['stage'] = state.stage;
-    history.replaceState(null, '', writeUrl(state));
+    history.replaceState(null, '', syncUrl());
   });
 
   segment('nets', (id) => {
     state.net = id === 'net-som' ? 'som' : 'mlp';
     document.body.dataset['net'] = state.net;
-    history.replaceState(null, '', writeUrl(state));
+    history.replaceState(null, '', syncUrl());
+    render();
   });
 
   /*
@@ -1034,7 +1298,7 @@ function boot(): void {
     state.learningRate = Number(Math.pow(10, Number(lr.value)).toPrecision(3));
     trainer.configure(currentTrainConfig());
     showLr();
-    history.replaceState(null, '', writeUrl(state));
+    history.replaceState(null, '', syncUrl());
     render();
   });
   showLr();
@@ -1055,7 +1319,7 @@ function boot(): void {
     if (!isOptimiserKind(kind)) return;
     state.optimiser = kind;
     trainer.configure(currentTrainConfig());
-    history.replaceState(null, '', writeUrl(state));
+    history.replaceState(null, '', syncUrl());
     render();
   });
 
@@ -1075,13 +1339,80 @@ function boot(): void {
   steps.addEventListener('input', () => {
     state.targetSteps = snapSteps(Math.pow(10, Number(steps.value)));
     $('v-steps').textContent = state.targetSteps.toLocaleString();
-    history.replaceState(null, '', writeUrl(state));
+    history.replaceState(null, '', syncUrl());
     render();
   });
   showSteps();
   syncSteps = showSteps;
 
-  $('btn-train').addEventListener('click', () => setRunning(!state.running));
+  /* ---------------- SOM controls ---------------- */
+
+  const somDatasetSelect = $<HTMLSelectElement>('som-i-dataset');
+  for (const [key, d] of Object.entries(SOM_DATASETS)) {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = d.label;
+    somDatasetSelect.append(opt);
+  }
+  somDatasetSelect.value = somState.dataset;
+  somDatasetSelect.addEventListener('change', () => {
+    if (isSomDatasetKey(somDatasetSelect.value)) {
+      somState.dataset = somDatasetSelect.value;
+      regenerateSomData();
+    }
+  });
+
+  slider('som-i-n', 'som-v-n', () => somState.n, (v) => (somState.n = v), (v) => String(v), regenerateSomData);
+  slider(
+    'som-i-seed', 'som-v-seed', () => somState.seed, (v) => (somState.seed = v), (v) => String(v),
+    regenerateSomData,
+  );
+  slider(
+    'som-i-cols', 'som-v-cols', () => somState.cols, (v) => (somState.cols = v), (v) => String(v),
+    regenerateSom,
+  );
+  slider(
+    'som-i-rows', 'som-v-rows', () => somState.rows, (v) => (somState.rows = v), (v) => String(v),
+    regenerateSom,
+  );
+  slider(
+    'som-i-alpha0', 'som-v-alpha0', () => somState.alpha0, (v) => (somState.alpha0 = v),
+    (v) => v.toFixed(2), regenerateSom,
+  );
+  slider(
+    'som-i-sigma0', 'som-v-sigma0', () => somState.sigma0, (v) => (somState.sigma0 = v),
+    (v) => v.toFixed(1), regenerateSom,
+  );
+
+  segment('som-topology', (id) => {
+    somState.topology = id === 'som-topo-rect' ? 'rect' : 'hex';
+    regenerateSom();
+  });
+
+  // Every schedule control restarts the run rather than bending it mid-flight — the same rule
+  // the MLP side applies to batch size: changing what a step *means* partway through would make
+  // the QE/TE chart's two halves describe two different experiments.
+  segment('som-decay', (id) => {
+    somState.decay = id === 'som-decay-linear' ? 'linear' : id === 'som-decay-inverse' ? 'inverse' : 'exponential';
+    regenerateSom();
+  });
+
+  const somSteps = $<HTMLInputElement>('som-i-steps');
+  const showSomSteps = (): void => {
+    somSteps.value = String(Math.log10(somState.targetSteps));
+    $('som-v-steps').textContent = somState.targetSteps.toLocaleString();
+  };
+  somSteps.addEventListener('input', () => {
+    somState.targetSteps = snapSteps(Math.pow(10, Number(somSteps.value)));
+    showSomSteps();
+    regenerateSom();
+  });
+  showSomSteps();
+
+  $('btn-train').addEventListener('click', () => {
+    if (state.net === 'som') setSomRunning(!somState.running);
+    else setRunning(!state.running);
+  });
 
   /*
    * One step is "run until one more than where you are".
@@ -1091,6 +1422,10 @@ function boot(): void {
    * difference between this and a normal run that happens to end quickly, which is the point.
    */
   $('btn-step').addEventListener('click', () => {
+    if (state.net === 'som') {
+      somStepOnce();
+      return;
+    }
     if (state.step >= state.targetSteps) return;
     if (state.rebuilding) {
       // Same window as Train, and the same answer: hold the intent rather than drop it.
@@ -1104,18 +1439,38 @@ function boot(): void {
   $('btn-reset').addEventListener('click', () => {
     // Back to step zero with the *same* weights, so a run can be repeated exactly. Reinitialise
     // is the button that changes them.
-    regenerateNet();
+    if (state.net === 'som') regenerateSom();
+    else regenerateNet();
   });
 
-  $('btn-stepper').addEventListener('click', () => stepper.open());
+  $('btn-stepper').addEventListener('click', () => {
+    if (state.net === 'som') return; // disabled — see renderSomStats.
+    stepper.open();
+  });
   $('st-close').addEventListener('click', () => stepper.close());
 
-  $('btn-reinit').addEventListener('click', () => {
+  const reinitWeights = (): void => {
+    if (state.net === 'som') {
+      somState.weightSeed = 1 + ((somState.weightSeed * 7919 + 13) % 9999);
+      regenerateSom();
+      return;
+    }
     state.weightSeed = 1 + ((state.weightSeed * 7919 + 13) % 9999);
     regenerateNet();
-  });
+  };
+  // One button per network — each panel needs its own for layout, but both do the same thing,
+  // so they share one handler rather than one copying the other's logic.
+  $('btn-reinit').addEventListener('click', reinitWeights);
+  $('som-btn-reinit').addEventListener('click', reinitWeights);
 
   $('btn-resample').addEventListener('click', () => {
+    if (state.net === 'som') {
+      somState.seed = 1 + ((somState.seed * 7919 + 13) % 9999);
+      $<HTMLInputElement>('som-i-seed').value = String(somState.seed);
+      $('som-v-seed').textContent = String(somState.seed);
+      regenerateSomData();
+      return;
+    }
     state.seed = 1 + ((state.seed * 7919 + 13) % 9999);
     $<HTMLInputElement>('i-seed').value = String(state.seed);
     $('v-seed').textContent = String(state.seed);
@@ -1142,7 +1497,7 @@ function boot(): void {
     }
     if (event.key === '.') $('btn-step').click();
     if (event.key === 'r' || event.key === 'R') $('btn-resample').click();
-    if (event.key === 'w' || event.key === 'W') $('btn-reinit').click();
+    if (event.key === 'w' || event.key === 'W') reinitWeights();
     if (event.key === 's' || event.key === 'S') $('btn-stepper').click();
 
     if (stepper.isOpen()) {
