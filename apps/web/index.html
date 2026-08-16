@@ -222,6 +222,17 @@
       body[data-net="mlp"] .som-panel-flex { display: none; }
       .mlp-panel-flex, .som-panel-flex { display: contents; }
 
+      /*
+        2D / 3D gating — a third dimension of the same idea, nested one level deeper: each of
+        `.mlp-panel-flex`/`.som-panel-flex` holds a `.view-2d` and a `.view-3d`, exactly one of
+        which is visible at once. 2D stays the default and is never missing a feature 3D has —
+        §7's rule — so nothing about *this* gate is allowed to grow independently of the other.
+      */
+      body[data-view="3d"] .view-2d { display: none; }
+      body[data-view="2d"] .view-3d { display: none; }
+      .view-2d, .view-3d { display: contents; }
+      .view-3d canvas { width: 100%; height: 100%; display: block; }
+
       /* The guided flow — §6 of the design document. */
       #guided { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 10px; }
       .gd-step { border-bottom: 1px solid var(--line); padding: 9px 12px 11px; }
@@ -391,9 +402,11 @@
         padding: 3px 8px; border-radius: 2px; border: 1px solid var(--line);
         background: rgba(14, 13, 21, .84); color: var(--dim);
       }
+      button.badge { cursor: pointer; }
+      button.badge:hover { color: var(--text); border-color: var(--dim); }
     </style>
   </head>
-  <body data-stage="guided" data-net="mlp">
+  <body data-stage="guided" data-net="mlp" data-view="2d">
     <header>
       <span class="brand">Neural<em>lab</em></span>
       <span class="seg nets" id="nets">
@@ -403,6 +416,10 @@
       <span class="seg" id="stages">
         <button id="stage-guided" class="on">Guided</button>
         <button id="stage-explorer">Explorer</button>
+      </span>
+      <span class="seg" id="views">
+        <button id="view-2d" class="on" title="The teaching surface — always available, never behind 3D">2D</button>
+        <button id="view-3d" title="A view, not a second simulation — the maths is identical (2 / 3)">3D</button>
       </span>
       <button id="btn-train" class="pri" title="Start or pause training (Space)">Train</button>
       <button id="btn-step" title="One minibatch step (.)">Step</button>
@@ -578,6 +595,7 @@
 
       <div class="stage-wrap">
         <div class="mlp-panel-flex">
+        <div class="view-2d">
         <div class="stage-box graph">
           <canvas id="graph"></canvas>
           <div class="badge" id="graph-badge">random weights</div>
@@ -593,11 +611,26 @@
           <div class="badge" id="field-badge">64² · —</div>
         </div>
         </div>
+        <div class="view-3d">
+        <div class="stage-box" style="flex:1">
+          <canvas id="loss-surface-3d"></canvas>
+          <button class="badge" id="loss3d-badge" title="Two named weights barely move the loss — click to see why representative is the default">2 random directions, filter-normalised</button>
+        </div>
+        </div>
+        </div>
 
         <div class="som-panel-flex">
+        <div class="view-2d">
         <div class="stage-box" style="flex:1">
           <canvas id="som-lattice"></canvas>
           <div class="badge" id="som-badge">random weights</div>
+        </div>
+        </div>
+        <div class="view-3d">
+        <div class="stage-box" style="flex:1">
+          <canvas id="lattice-fold-3d"></canvas>
+          <div class="badge" id="fold3d-badge">dims r, g, b</div>
+        </div>
         </div>
         </div>
       </div>

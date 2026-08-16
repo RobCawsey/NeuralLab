@@ -18,6 +18,58 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 12 — "3D".** A `2D / 3D` toggle in the toolbar, or the `2`/`3` keys. The MLP gets an
+orbitable loss surface — two random, filter-normalised directions through weight space by
+default, with a `literal` mode that varies two named weights instead, and the run's own path
+traced across whichever is showing. The SOM gets its lattice folding through input space in three
+dimensions: nodes at their own weight vectors, connected by their lattice edges, floating in a
+thinned sample of the data. Both are dynamically imported — `three` is not in the graph any
+request reaches before a reader presses `3` for the first time. 296 tests.
+
+**The snapshot ring was an open question, and it is answered now: capped at 60, in count, not
+megabytes.** §13 asked whether an epoch scrubber was worth keeping weights every 20th report and
+flagged the number needed stating in steps rather than size. `AppState.snapshots` settles it:
+60 entries regardless of run length, the same "pace by a fixed count, not by how long the run
+happens to be" rule `SOM_TICKS` already used for the training pump. At 60 snapshots the largest
+network this project will reach (64-128-128-10, slice 16) is under 6.4 MB; the default 2-8-8-2 is
+under 7 kB. One snapshot is taken per worker report that closed a chart point, not per report —
+reports arrive around 25 times a second, points at most 200 times a run.
+
+**The loss surface and the path share one flat-weight-space kernel with the run's own weight
+buffers, not a parallel notion of "direction".** A `Direction` is exactly a `Float32Array` the
+same shape `flattenWeights`/`applyWeights` already use, so projecting a snapshot onto it is a
+plain dot product and evaluating the surface is `applyWeights` into a scratch network followed by
+`forward`. Nothing here perturbs the real network — `computeLossSurface` reads `flattenWeights`
+once and runs every grid cell through its own scratch copy, the same "own scratch" rule
+`evaluateRows` and the stepper's trace already follow, checked by a test that asserts the real
+network's weights are byte-identical before and after a surface is computed.
+
+**Filter-normalisation is checked against the real network's own layer norms, and the hand-worked
+grid test is what actually proves the arithmetic.** A 1-1 linear network with `mse` loss has a
+closed form, `loss(w, b) = 0.5·(wx + b − 1)²`, worked out on paper and checked against a 3×3 grid
+exactly — the same discipline the SOM's lattice table used in slice 9, applied here to a
+continuous surface instead of a discrete one.
+
+**Literal and representative modes produce measurably different pictures, and the difference
+is the lesson the design document asked for — verified live, not merely quoted.** On the trained
+golden run, representative mode's path (projected onto two random directions) stays visibly short
+near the current-position marker; switching to literal mode (two named weights) on the same
+trained network shows a path several times longer, because an individual weight's own trajectory
+correlates with itself in a way a random projection of 114 dimensions mostly does not. Both
+pictures are real; only their honesty about what two dimensions out of many can show differs.
+
+**A custom orbit camera, not `three`'s own `OrbitControls` addon.** Spherical coordinates around a
+fixed target, updated from three pointer listeners and one wheel listener, reset on double-click —
+about eighty lines, and it keeps the dependency surface at the one `three` package itself rather
+than also importing from `three/examples`. Shared by both 3D scenes rather than written twice.
+
+**No bug needed fixing to get this working, which is itself worth recording plainly rather than
+inventing one.** The one place a mistake was designed around rather than found live:
+`render/scatter.ts`'s `resize()` calls `canvas.getContext('2d')`, which permanently locks a canvas
+out of ever getting a WebGL context afterward — so the 3D canvases get their own `size3d()`, which
+only ever reads `clientWidth`/`clientHeight`. Known going in, from how the 2D field's own canvas
+helper works, rather than discovered by a crash.
+
 **Slice 11 — "The SOM stepper, and the second guided flow".** Both networks now get the two
 teaching screens the project exists for. The stepper pages through five stages — sample →
 distances → BMU → neighbourhood → update — with the lattice heatmapped per stage beside a second
@@ -583,16 +635,16 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 12 — "3D"
+### Next: slice 13 — "Challenge track"
 
-A loss surface for the MLP that can be orbited — two random, filter-normalised directions through
-weight space rather than two named weights, with the run that actually happened traced across it
-from the snapshot ring, per §8's own warning that two named weights barely move the loss. The SOM
-gets its lattice folding through input space in three dimensions, the natural extension of
-`render/inputspace.ts`'s two — for the colour cube that projection is exact, and above three
-dimensions (digits, slice 16) it stays PCA on the data, named on screen rather than left
-unstated. Both are dynamically imported Three.js chunks; nothing about the 2D view — still the
-default — is allowed to grow a feature the 3D one lacks first.
+Twelve cards, four phases, one dot per concept — the ladder every "challenge N" reference in this
+file has been pointing at since slice 0. A collapsed card is its title alone; twelve briefs would
+not fit on screen but twelve titles do. Cards past the frontier are dimmed as guidance rather than
+locked, because a reader who already knows the material should not have to replay the ladder to
+reach it, and a completed card is never dimmed. Progress lives in `localStorage`, parsed
+defensively like every other piece of state that outlives the code reading it. The afterword
+branches on the run's own outcome and quotes its numbers — the same rule §6 has applied to every
+piece of generated copy in the project since slice 1's probe note was first wrong.
 
 ## Invariants
 

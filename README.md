@@ -14,12 +14,12 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 11 of 16 — the SOM stepper, and the second guided flow.** Both networks now have the two
-teaching screens the project exists for. The stepper pages through five real stages — sample,
-distances, BMU, neighbourhood, update — with the lattice heatmapped beside the same map folded
-through input space, node-to-node edges and all. The guided flow adds a second walkthrough: pick
-data, watch it fold, see the U-matrix's ridges, then label the map from data it was never trained
-on the answer for.
+**Slice 12 of 16 — 3D.** A `2D / 3D` toggle in the toolbar. The MLP gets an orbitable loss surface
+— two random, filter-normalised directions through weight space, with the run's own path traced
+across it — and a `literal` mode that shows why two named weights alone barely move the loss. The
+SOM gets its lattice folding through input space in three dimensions: nodes at their own weight
+vectors, connected by their lattice edges, floating in the data. Both are dynamically imported;
+nothing about the 2D view, still the default, is missing a feature 3D has.
 
 ## Getting started
 
@@ -31,7 +31,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 288 tests, ~3.7 s
+npm test       # 296 tests, ~3.6 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the MLP golden run, plus challenges 1 and 3, all asserted

@@ -10,21 +10,26 @@
  * loop into uneven bursts cannot move them.
  */
 
-import { bounds2d, sample } from '@neurallab/core';
+import { bounds2d, sample, Rng } from '@neurallab/core';
 import { GENERATORS } from '@neurallab/data';
 import {
   ACTIVATIONS,
   INIT_SCHEMES,
   applyWeights,
   argmax,
+  computeLossSurface,
   describeShape,
+  flattenWeights,
   isActivation,
   isInitScheme,
   isOptimiserKind,
   paramBudget,
   paramCount,
   parseHidden,
+  projectOntoDirections,
+  randomDirection,
   shapeOf,
+  unitDirection,
   type TrainConfig,
 } from '@neurallab/mlp';
 import { classColour, drawScatter, resize } from './render/scatter.ts';
@@ -46,6 +51,7 @@ import {
   readUrl,
   rebuildData,
   rebuildNet,
+  recordSnapshot,
   resetRun,
   suggestedSteps,
   trainSetup,
@@ -85,6 +91,7 @@ rebuildSom(somState);
 function syncUrl(): string {
   const q = new URLSearchParams(writeUrl(state).slice(1));
   writeSomUrl(somState, q);
+  q.set('view', view3d ? '3d' : '2d');
   return '?' + q.toString();
 }
 
@@ -117,6 +124,104 @@ let fieldMs = 0;
 let diagScratch = createScratch(state.model);
 let focus: [number, number] | null = null;
 let dragging = false;
+
+/* ---------------- 3D ---------------- */
+
+/**
+ * §7's "dynamically imported" kept literal, not just descriptive: neither `three` nor either
+ * scene module is in the graph any request reaches before a reader actually asks for 3D.
+ * `view3d` lives here rather than on `AppState`/`SomState` because it is one toggle shared by
+ * both networks, the same reason `hover`/`focus` above are module state and not state fields.
+ */
+let view3d = new URLSearchParams(window.location.search).get('view') === '3d';
+let lossSurfaceScene: import('./render3d/lossSurface3d.ts').LossSurfaceHandle | null = null;
+let latticeFoldScene: import('./render3d/latticeFold3d.ts').LatticeFoldHandle | null = null;
+
+/**
+ * The two directions the loss surface is drawn against. Held fixed across renders — redrawn
+ * only when the network's shape changes — so the picture does not swim under a reader who is
+ * still looking at it; the run's own path is what is supposed to move, not the ground it moves
+ * across.
+ */
+let lossDir1: Float32Array | null = null;
+let lossDir2: Float32Array | null = null;
+let lossDirShape = '';
+const lossDirRng = new Rng(4417);
+let lossLiteral = false;
+let lastLossSurfaceAt = 0;
+const LOSS_SURFACE_THROTTLE_MS = 300;
+
+function ensureLossSurfaceScene(): Promise<void> {
+  if (lossSurfaceScene) return Promise.resolve();
+  return import('./render3d/lossSurface3d.ts').then((mod) => {
+    lossSurfaceScene = mod.createLossSurfaceScene($<HTMLCanvasElement>('loss-surface-3d'));
+    render();
+  });
+}
+
+function ensureLatticeFoldScene(): Promise<void> {
+  if (latticeFoldScene) return Promise.resolve();
+  return import('./render3d/latticeFold3d.ts').then((mod) => {
+    latticeFoldScene = mod.createLatticeFold3dScene($<HTMLCanvasElement>('lattice-fold-3d'));
+    render();
+  });
+}
+
+function ensure3dSceneFor(net: 'mlp' | 'som'): void {
+  void (net === 'som' ? ensureLatticeFoldScene() : ensureLossSurfaceScene());
+}
+
+/** CSS-pixel size of a WebGL canvas — `render/scatter.ts`'s `resize` calls `getContext('2d')`,
+ * which would permanently lock a canvas out of ever getting a WebGL context afterward. */
+function size3d(canvas: HTMLCanvasElement): { w: number; h: number } {
+  return { w: Math.max(1, canvas.clientWidth), h: Math.max(1, canvas.clientHeight) };
+}
+
+function renderLossSurface3d(): void {
+  if (!lossSurfaceScene) return;
+  const key = `${shapeOf(state.model).join('-')}:${lossLiteral ? 'literal' : 'representative'}`;
+  if (!lossDir1 || !lossDir2 || lossDirShape !== key) {
+    lossDirShape = key;
+    if (lossLiteral) {
+      lossDir1 = unitDirection(state.model, 0);
+      lossDir2 = unitDirection(state.model, 1);
+    } else {
+      lossDir1 = randomDirection(state.model, lossDirRng);
+      lossDir2 = randomDirection(state.model, lossDirRng);
+    }
+  }
+
+  const badge = $('loss3d-badge');
+  badge.textContent = lossLiteral ? 'literal — 2 named weights' : '2 random directions, filter-normalised';
+
+  const { w, h } = size3d($<HTMLCanvasElement>('loss-surface-3d'));
+  lossSurfaceScene.resize(w, h);
+
+  const now = performance.now();
+  if (now - lastLossSurfaceAt < LOSS_SURFACE_THROTTLE_MS) return;
+  lastLossSurfaceAt = now;
+
+  const base = flattenWeights(state.model);
+  const surface = computeLossSurface(state.model, state.z, state.parts.train, lossDir1, lossDir2, 25, 1.2);
+  const path = state.snapshots.map((snap) => {
+    const [alpha, beta] = projectOntoDirections(base, snap.weights, lossDir1 as Float32Array, lossDir2 as Float32Array);
+    return { alpha, beta };
+  });
+  lossSurfaceScene.update(surface, path, { alpha: 0, beta: 0 });
+}
+
+function renderLatticeFold3d(): void {
+  if (!latticeFoldScene) return;
+  const { w, h } = size3d($<HTMLCanvasElement>('lattice-fold-3d'));
+  latticeFoldScene.resize(w, h);
+  const dims: [number, number, number] = [0, Math.min(1, somState.som.dim - 1), Math.min(2, somState.som.dim - 1)];
+  latticeFoldScene.update(somState.som, somState.data, dims);
+  const names = somState.data.featureNames;
+  $('fold3d-badge').textContent =
+    somState.som.dim <= 3
+      ? `dims ${dims.map((d) => names[d] ?? `f${d}`).join(', ')}`
+      : `PCA not built yet — showing dims ${dims.join(', ')}`;
+}
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -163,6 +268,9 @@ const trainer = new TrainerClient({
     for (const point of report.points) state.points.push(point);
 
     applyWeights(state.model, report.weights);
+    // One snapshot per report that closed off a chart point, not one per report — reports arrive
+    // ~25 times a second, points at most 200 times a run, and the ring is capped in count.
+    if (report.points.length > 0) recordSnapshot(state, report.weights);
     // The weights moved, so the field is a picture of a network that no longer exists.
     fieldStale = true;
     render();
@@ -759,30 +867,36 @@ function render(): void {
   const out = evaluateProbe(state);
   const input = probeInput(state);
 
-  const scatterFit = resize(stage);
-  if (scatterFit) {
-    const view = drawScatter(scatterFit.ctx, state.data, scatterFit.w, scatterFit.h, {
-      hover,
-      isVal: state.isVal,
-      underlay: (cam) => {
-        refreshField(cam, scatterFit.w, scatterFit.h);
-        if (field) drawField(scatterFit.ctx, field, cam);
-      },
-    });
-    camera = view.camera;
-    drawProbe(scatterFit.ctx, out);
-  }
-
-  const graphFit = resize(graph);
-  if (graphFit) {
-    if (shapeOf(state.model).some((n) => n > UNIT_CAP)) {
-      graphFit.ctx.clearRect(0, 0, graphFit.w, graphFit.h);
-      drawOverCapNotice(graphFit.ctx, graphFit.w, graphFit.h);
-    } else {
-      drawNetwork(graphFit.ctx, state.model, input, state.scratch, graphFit.w, graphFit.h, {
-        focus,
+  // The stage view — graph and scatter in 2D, the loss surface in 3D. Never both: §7's rule
+  // that 3D is a view and not a second simulation means only one of them is ever doing work.
+  if (!view3d) {
+    const scatterFit = resize(stage);
+    if (scatterFit) {
+      const view = drawScatter(scatterFit.ctx, state.data, scatterFit.w, scatterFit.h, {
+        hover,
+        isVal: state.isVal,
+        underlay: (cam) => {
+          refreshField(cam, scatterFit.w, scatterFit.h);
+          if (field) drawField(scatterFit.ctx, field, cam);
+        },
       });
+      camera = view.camera;
+      drawProbe(scatterFit.ctx, out);
     }
+
+    const graphFit = resize(graph);
+    if (graphFit) {
+      if (shapeOf(state.model).some((n) => n > UNIT_CAP)) {
+        graphFit.ctx.clearRect(0, 0, graphFit.w, graphFit.h);
+        drawOverCapNotice(graphFit.ctx, graphFit.w, graphFit.h);
+      } else {
+        drawNetwork(graphFit.ctx, state.model, input, state.scratch, graphFit.w, graphFit.h, {
+          focus,
+        });
+      }
+    }
+  } else {
+    renderLossSurface3d();
   }
 
   const chartFit = resize(chart);
@@ -814,13 +928,17 @@ let somLatticeLayout: LatticeLayout | null = null;
 function renderSom(): void {
   const s = somState;
 
-  const latticeFit = resize($('som-lattice'));
-  if (latticeFit) {
-    somLatticeLayout = layoutLattice(s.som.cols, s.som.rows, s.som.topology, latticeFit.w, latticeFit.h);
-    drawLattice(latticeFit.ctx, s.som, somLatticeLayout, latticeFit.w, latticeFit.h, {
-      bmu: s.lastBmu,
-      hover: s.hoverNode,
-    });
+  if (!view3d) {
+    const latticeFit = resize($('som-lattice'));
+    if (latticeFit) {
+      somLatticeLayout = layoutLattice(s.som.cols, s.som.rows, s.som.topology, latticeFit.w, latticeFit.h);
+      drawLattice(latticeFit.ctx, s.som, somLatticeLayout, latticeFit.w, latticeFit.h, {
+        bmu: s.lastBmu,
+        hover: s.hoverNode,
+      });
+    }
+  } else {
+    renderLatticeFold3d();
   }
 
   const chartFit = resize($('som-chart'));
@@ -1291,6 +1409,20 @@ function boot(): void {
     state.net = id === 'net-som' ? 'som' : 'mlp';
     document.body.dataset['net'] = state.net;
     history.replaceState(null, '', syncUrl());
+    if (view3d) ensure3dSceneFor(state.net);
+    render();
+  });
+
+  segment('views', (id) => {
+    view3d = id === 'view-3d';
+    document.body.dataset['view'] = view3d ? '3d' : '2d';
+    history.replaceState(null, '', syncUrl());
+    if (view3d) ensure3dSceneFor(state.net);
+    render();
+  });
+
+  $('loss3d-badge').addEventListener('click', () => {
+    lossLiteral = !lossLiteral;
     render();
   });
 
@@ -1519,6 +1651,8 @@ function boot(): void {
     if (event.key === 'r' || event.key === 'R') $('btn-resample').click();
     if (event.key === 'w' || event.key === 'W') reinitWeights();
     if (event.key === 's' || event.key === 'S') $('btn-stepper').click();
+    if (event.key === '2') $('view-2d').click();
+    if (event.key === '3') $('view-3d').click();
 
     if (stepper.isOpen()) {
       // Scoped to the overlay being open, so arrow keys do not hijack the sliders behind it.
@@ -1538,9 +1672,14 @@ function boot(): void {
 
   document.body.dataset['stage'] = state.stage;
   document.body.dataset['net'] = state.net;
+  document.body.dataset['view'] = view3d ? '3d' : '2d';
   for (const b of Array.from($('stages').querySelectorAll('button'))) {
     b.classList.toggle('on', b.id === `stage-${state.stage}`);
   }
+  for (const b of Array.from($('views').querySelectorAll('button'))) {
+    b.classList.toggle('on', b.id === (view3d ? 'view-3d' : 'view-2d'));
+  }
+  if (view3d) ensure3dSceneFor(state.net);
   // No syncPresets() here — renderNetPanels() below calls it, along with everything else that
   // has to agree with state.hidden before the first paint.
 

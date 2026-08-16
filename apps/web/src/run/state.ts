@@ -69,6 +69,30 @@ export interface AppState {
 
   /** The point the forward pass is evaluated at, in **data** coordinates. */
   probe: [number, number];
+
+  /** The run's own path through weight space — slice 12's loss surface reads this. */
+  snapshots: WeightSnapshot[];
+}
+
+/** One weight snapshot, tagged with the step it was taken at. */
+export interface WeightSnapshot {
+  readonly step: number;
+  readonly weights: Float32Array;
+}
+
+/**
+ * How many snapshots the ring keeps — capped in **count**, not resolution, per §13's own open
+ * question ("the cap should be stated in steps rather than megabytes so a reader can understand
+ * what they lose"). At 60 snapshots a 2-8-8-2 network is under 7 kB total; the largest network
+ * this project reaches (64-128-128-10, slice 16) is under 6.4 MB, which is the figure §13 called
+ * "probably fine" before deciding — now decided, not merely hoped.
+ */
+export const SNAPSHOT_CAP = 60;
+
+/** Record the current weights into the ring, dropping the oldest once it is full. */
+export function recordSnapshot(s: AppState, weights: Float32Array): void {
+  s.snapshots.push({ step: s.step, weights: Float32Array.from(weights) });
+  if (s.snapshots.length > SNAPSHOT_CAP) s.snapshots.shift();
 }
 
 /**
@@ -126,6 +150,7 @@ export function createState(): AppState {
     diverged: false,
     rebuilding: false,
     probe: [0, 0] as [number, number],
+    snapshots: [] as WeightSnapshot[],
   };
   rebuildData(s);
   rebuildNet(s);
@@ -186,6 +211,7 @@ export function resetRun(s: AppState): void {
   s.running = false;
   s.stepsPerSecond = 0;
   s.diverged = false;
+  s.snapshots = [];
 }
 
 /**

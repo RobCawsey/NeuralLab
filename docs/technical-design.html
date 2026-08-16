@@ -1147,6 +1147,40 @@ type FromWorker =
     feature may exist in 3D that the 2D view lacks. Evolab learned this the expensive way — its 3D
     replay of a 2D physics engine had to have three sections of its design document amended — and
     the rule is inherited rather than rediscovered.</p></div>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 12 &middot; built and measured</span>
+      <p><strong>The loss surface and its path share one flat-weight-space kernel with the run's
+      own weight buffers, not a parallel notion of "direction".</strong> A direction is exactly a
+      <code>Float32Array</code> the same shape <code>flattenWeights</code>/<code>applyWeights</code>
+      already use, so projecting a snapshot onto one is a plain dot product and evaluating the
+      surface is <code>applyWeights</code> into a scratch network followed by <code>forward</code>.
+      Nothing perturbs the real network — checked by a test asserting its weights are
+      byte-identical before and after a surface is computed — and the arithmetic itself is checked
+      against a hand-worked closed form: a 1-1 linear network with <code>mse</code> loss has
+      <code>loss(w, b) = 0.5&middot;(wx + b &minus; 1)&sup2;</code>, worked out on paper and matched
+      to a 3&times;3 grid exactly, the same discipline slice 9's lattice table used for a discrete
+      structure applied here to a continuous one.</p>
+      <p><strong>Literal and representative modes produce measurably different pictures, verified
+      live rather than merely asserted.</strong> On the trained golden run, representative mode's
+      path — projected onto two random directions — stays visibly short near the current-position
+      marker. Switching to literal mode on the same trained network, without retraining, shows a
+      path several times longer: an individual weight's own trajectory correlates with itself in a
+      way a random projection of 114 dimensions mostly does not. Both pictures are real: only their
+      honesty about what two dimensions out of many can show differs, which is exactly what §7
+      asked the comparison to teach.</p>
+      <p><strong>A custom orbit camera, not <code>three</code>'s own <code>OrbitControls</code>
+      addon.</strong> Spherical coordinates around a fixed target, updated from pointer and wheel
+      listeners, reset on double-click — about eighty lines, shared by both scenes, and it keeps
+      the dependency surface at the one <code>three</code> package itself rather than also
+      importing from <code>three/examples</code>.</p>
+      <p>No bug needed fixing to get this working, which is worth recording plainly rather than
+      inventing one to match the pattern of every amendment before it. The one place a mistake was
+      designed around rather than found live: the 2D field's own canvas helper calls
+      <code>canvas.getContext('2d')</code>, which permanently locks a canvas out of ever getting a
+      WebGL context afterward — so the 3D canvases get their own sizing helper, which only ever
+      reads <code>clientWidth</code>/<code>clientHeight</code>, known going in rather than
+      discovered by a crash.</p>
+    </div>
   </div>
 </section>
 
@@ -1594,15 +1628,19 @@ npm run som          <i># headless SOM: 6000 steps, prints QE, TE and an ASCII U
       all more familiar than Kohonen maps. The slice order is the defence, and slice 9 is the line.</li>
     </ul>
 
-    <h3>Open questions</h3>
-    <ul class="list">
-      <li><strong>Is the epoch scrubber worth its snapshot ring?</strong> Keeping weights every 20th
-      report at 106&nbsp;kB a snapshot is 5&nbsp;MB for a long run on the largest network. Probably
-      fine, probably needs a cap, and the cap should be stated in steps rather than megabytes so a
-      reader can understand what they lose.</li>
-    </ul>
-
     <h3 style="margin-top:32px">Answered</h3>
+
+    <div class="pick"><strong>The snapshot ring is capped at 60, in count, not megabytes.</strong>
+    The open question was whether an epoch scrubber was worth keeping weights every 20th report,
+    at 106&nbsp;kB a snapshot — "probably fine, probably needs a cap, and the cap should be stated
+    in steps rather than megabytes." It is: <code>AppState.snapshots</code> keeps exactly 60
+    regardless of how long the run is, the same "pace by a fixed count, not by run length" rule
+    the SOM's own training pump already used. At 60 snapshots the default 2-8-8-2 network is under
+    7&nbsp;kB; the largest network this project will reach (64-128-128-10, slice 16) is under
+    6.4&nbsp;MB. One is taken per worker report that closed a chart point, not per report — reports
+    arrive roughly 25 times a second, points at most 200 times a run. The scrubber itself did not
+    arrive with this decision; slice 12 needed the ring for the loss surface's path and built only
+    that.</div>
 
     <div class="pick"><strong>Hex, and it is the default.</strong> Rectangular stays as an option
     because two topologies side by side is itself a lesson — but a hex lattice is what the

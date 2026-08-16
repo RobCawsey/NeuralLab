@@ -75,3 +75,10 @@ export {
   type StepTrace,
   type TraceScratch,
 } from './trace.ts';
+export {
+  computeLossSurface,
+  projectOntoDirections,
+  randomDirection,
+  unitDirection,
+  type LossSurface,
+} from './losssurface.ts';
