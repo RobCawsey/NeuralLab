@@ -18,6 +18,52 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 11 — "The SOM stepper, and the second guided flow".** Both networks now get the two
+teaching screens the project exists for. The stepper pages through five stages — sample →
+distances → BMU → neighbourhood → update — with the lattice heatmapped per stage beside a second
+view of the same map folded through input space, node-to-node edges and all. The guided flow adds
+`SOM_FLOW` beside `MLP_FLOW`: pick data, watch it fold, see the U-matrix's ridges, then label the
+map from data it was never trained on the answer for. 288 tests.
+
+**No worker round trip, because there is nothing on the other side of one.** The MLP stepper
+requests a trace and waits for `onTrace`, since training runs on a different thread. SOM training
+runs on this one (slice 10's own finding), so "request a trace" is `somStep(trainer, ds, {trace:
+true})`, called directly and returned synchronously. `SomStepTrace` is built *inside* `somStep`
+rather than by a sibling function — the per-node loop the update already runs is the same loop
+that has to visit every node to report a distance and a strength, and splitting that into two
+loops would either duplicate it or force an awkward second pass. A test proves tracing changes
+nothing: 200 steps traced every time land on bit-identical weights to 200 steps never traced.
+
+**Two distinct pictures share the stepper screen, and neither one alone is the algorithm.** The
+lattice view shows what the update looks like in the map's own coordinates — a heatmap of
+distance, then of neighbourhood strength, with the BMU ringed. The input-space view shows the same
+step where the *data* lives: every node's weight vector as a point, connected to its lattice
+neighbours by a line — literally the net the map is, folded through the space it is learning. The
+BMU's own before → after line is the one thing drawn only on the update stage. Built once as
+`render/inputspace.ts` rather than as a stepper-only view, because the guided flow's own step 2
+("watch a flat sheet fold into it") is the same drawing at a different moment.
+
+**Labelling a map is a vote taken after the fact, not a training signal — `nodeLabels` says so in
+its own return value.** Every training row's BMU gets one vote for that row's class; a node's
+label is whichever class won it most, and a node no row ever won reads `-1` rather than `0`, so
+"unlabelled" and "labelled class zero" cannot be confused by an off-by-one. Datasets with no `y`
+at all — the colour cube — return every node as `-1`, and the guided flow says so in plain words
+rather than drawing an empty grid and letting a reader wonder why.
+
+**The "Reveal labels" button was clicked and nothing happened, and that is the second render-order
+bug this slice found live.** Unlike picking a dataset, revealing labels changes no state a rebuild
+would render as a side effect — there is no `regenerateSomData()` for the guided controller's own
+click handler to piggyback a render on. Fixed by giving `SomGuidedOptions` a `requestRender`
+callback and calling it explicitly, the same shape of fix slice 6 needed for the MLP flow's own
+step-advance ordering, found the same way: clicking the button and watching the screen not change.
+
+**`ui/guided.ts` is not literally one function for both networks, and §13's "one renderer" turned
+out to mean something narrower once there were two state shapes to read.** `AppState` and
+`SomState` share nothing; a single polymorphic controller would need as many branches as two
+controllers have lines. What *is* shared, because it is genuinely one idea, is the step-card and
+choice-button vocabulary — extracted into `ui/guidedShared.ts` once `ui/somGuided.ts` needed it a
+second time, rather than copied.
+
 **Slice 10 — "Reading a map".** The Kohonen switch has something behind it now: a full second
 Explorer, the lattice drawn hex or rect with nodes filled by their own weight vector, a QE/TE
 chart, the U-matrix and component planes as `ImageData` blits, and controls for dataset, lattice
@@ -537,15 +583,16 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 11 — "The SOM stepper, and the second guided flow"
+### Next: slice 12 — "3D"
 
-BMU and neighbourhood drawn side by side with input space — the map's answer to the MLP's
-step-through-backprop screen — plus the second `GuidedFlow`: pick data, watch a flat sheet fold
-into it, see which regions the map kept apart, label it. Its own step 3 *is* the U-matrix slice 10
-just built, which is why the flow waits for this slice rather than arriving with slice 6's. Labels
-for the datasets that have them held back — colour cube has none to show, but iris and animals will
-— are still open; §3's "unlabelled is a fact about training, not about the file" says the data was
-always ready for this, only the panel wasn't.
+A loss surface for the MLP that can be orbited — two random, filter-normalised directions through
+weight space rather than two named weights, with the run that actually happened traced across it
+from the snapshot ring, per §8's own warning that two named weights barely move the loss. The SOM
+gets its lattice folding through input space in three dimensions, the natural extension of
+`render/inputspace.ts`'s two — for the colour cube that projection is exact, and above three
+dimensions (digits, slice 16) it stays PCA on the data, named on screen rather than left
+unstated. Both are dynamically imported Three.js chunks; nothing about the 2D view — still the
+default — is allowed to grow a feature the 3D one lacks first.
 
 ## Invariants
 

@@ -321,6 +321,15 @@
       }
       .st-strip { width: 100%; height: 22px; display: block; border-radius: 2px; overflow: hidden; }
       .st-tiles { width: 100%; display: block; border-radius: 2px; }
+
+      /* The SOM stepper's two side-by-side views — lattice and input space, per stage. */
+      .som-st-views { display: flex; gap: 1px; flex: 1.4; min-height: 0; background: var(--line); }
+      .som-st-view { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+      .som-st-view-lb {
+        font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
+        color: var(--faint); padding: 6px 10px 4px;
+      }
+      .som-st-view canvas { flex: 1; min-height: 0; width: 100%; display: block; }
       .st-note {
         font-size: 12px; line-height: 1.55; color: var(--text); margin: 2px 0 0;
         border-left: 2px solid var(--amber); padding: 5px 0 5px 10px;
@@ -500,6 +509,9 @@
         </div>
 
         <div class="som-panel">
+        <div id="som-guided" class="guided-only"></div>
+
+        <div class="guided-hide">
           <div class="ph">Data<span class="sp"></span><em id="som-ph-data">colour cube</em></div>
           <div class="pb">
             <label class="sl-head" for="som-i-dataset">set</label>
@@ -560,6 +572,7 @@
               <b class="sl-val" id="som-v-steps">3,000</b>
             </div>
           </div>
+        </div>
         </div>
       </aside>
 
@@ -663,6 +676,14 @@
         </div>
 
         <div class="som-panel">
+        <!--
+          Before-and-after for the map — guided step 3 (a U-matrix snapshot) and step 4 (the
+          label vote). Populated only while those steps are live; never shown outside the guided
+          stage, where the instruments below already tell the same story at length.
+        -->
+        <div id="som-guided-compare" class="guided-only"></div>
+
+        <div class="guided-hide">
           <div class="ph">Quantisation / topographic error<span class="sp"></span><em id="som-ph-chart">step 0</em></div>
           <canvas id="som-chart"></canvas>
           <div class="legend">
@@ -692,6 +713,7 @@
             <div class="kv"><span>max hits</span><b class="am" id="som-s-maxhit">—</b></div>
           </div>
         </div>
+        </div>
       </aside>
     </main>
 
@@ -715,6 +737,42 @@
         <div class="st-stages" id="st-stages"></div>
         <div class="st-detail" id="st-detail"></div>
         <div class="st-explain" id="st-explain"></div>
+      </div>
+    </div>
+
+    <!--
+      The SOM stepper — slice 11, the map's answer to the one above. A separate overlay rather
+      than branching the MLP one's DOM: the two show fundamentally different pictures (strips and
+      weight tiles vs. lattice heatmaps and a folded net in input space), and a single template
+      trying to be both would need as many conditionals as two templates have lines.
+    -->
+    <div class="stepper" id="som-stepper" hidden>
+      <header>
+        <span class="brand">Neural<em>lab</em></span>
+        <span class="chip" id="som-st-chip">kohonen</span>
+        <span class="hint" id="som-st-where">step &mdash; &middot; row &mdash;</span>
+        <span class="spacer"></span>
+        <button id="som-st-prev">&larr; back</button>
+        <button id="som-st-next" class="pri">next &rarr;</button>
+        <button id="som-st-run">run to end of step</button>
+        <button id="som-st-close">close</button>
+      </header>
+      <div class="st-body">
+        <div class="st-stages" id="som-st-stages"></div>
+        <div class="st-detail" id="som-st-detail">
+          <div class="som-st-views">
+            <div class="som-st-view">
+              <div class="som-st-view-lb">lattice</div>
+              <canvas id="som-st-lattice"></canvas>
+            </div>
+            <div class="som-st-view">
+              <div class="som-st-view-lb" id="som-st-input-lb">input space &middot; dims 0, 1</div>
+              <canvas id="som-st-input"></canvas>
+            </div>
+          </div>
+          <div class="pb" id="som-st-kv"></div>
+        </div>
+        <div class="st-explain" id="som-st-explain"></div>
       </div>
     </div>
 

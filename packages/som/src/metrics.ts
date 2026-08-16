@@ -98,6 +98,44 @@ export function componentPlane(som: Som, dim: number): Float32Array {
   return out;
 }
 
+/**
+ * A class per node — the map's own label, never trained on but recoverable afterward. Each row
+ * votes for its BMU; a node's label is whichever class won it most, and a node nobody ever won
+ * reads `-1` rather than `0`, so "unlabelled" and "labelled class zero" cannot be confused.
+ *
+ * This is deliberately a *reading* of a finished map, not a training signal — §3's rule that a
+ * SOM is trained on data it is never told the answer for holds regardless of whether the answer
+ * exists in the file. `ds.y === null` (the colour cube) returns every node as `-1`: there is
+ * nothing to vote with, and this function says so rather than guessing.
+ */
+export function nodeLabels(som: Som, ds: Dataset, rows: Int32Array): Int32Array {
+  const n = som.cols * som.rows;
+  const labels = new Int32Array(n).fill(-1);
+  if (ds.y === null || ds.classes === 0) return labels;
+
+  const votes = new Int32Array(n * ds.classes);
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r] as number;
+    const winner = bmu(som, sample(ds, row));
+    const cls = ds.y[row] as number;
+    votes[winner * ds.classes + cls] = (votes[winner * ds.classes + cls] as number) + 1;
+  }
+
+  for (let i = 0; i < n; i++) {
+    let best = -1;
+    let bestCount = 0;
+    for (let c = 0; c < ds.classes; c++) {
+      const v = votes[i * ds.classes + c] as number;
+      if (v > bestCount) {
+        bestCount = v;
+        best = c;
+      }
+    }
+    labels[i] = best;
+  }
+  return labels;
+}
+
 function nodeDistance(som: Som, a: number, b: number): number {
   const baseA = a * som.dim;
   const baseB = b * som.dim;

@@ -52,8 +52,12 @@ export function createSom(cols: number, rows: number, dim: number, topology: Top
   };
 }
 
-/** Squared Euclidean distance between a node's weight vector and a sample — no `sqrt` to compare. */
-function sqDistance(som: Som, node: number, x: ArrayLike<number>): number {
+/**
+ * Squared Euclidean distance between a node's weight vector and a sample — no `sqrt` to compare.
+ * Exported for the stepper's "distances" stage, which needs it for every node, not just the
+ * winner `bmu` keeps.
+ */
+export function sqDistance(som: Som, node: number, x: ArrayLike<number>): number {
   const base = node * som.dim;
   let sum = 0;
   for (let k = 0; k < som.dim; k++) {

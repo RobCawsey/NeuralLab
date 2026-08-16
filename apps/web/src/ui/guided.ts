@@ -17,6 +17,7 @@ import { computeField, drawField, type Field } from '../render/field.ts';
 import { fitCamera, padBox } from '../render/camera.ts';
 import { resize } from '../render/scatter.ts';
 import { MLP_FLOW, SHAPES, compareAfterword, stepStatus, type ShapeChoice } from '../run/guided.ts';
+import { choiceButton, skipButton, stepEl } from './guidedShared.ts';
 import type { AppState } from '../run/state.ts';
 
 interface Snapshot {
@@ -104,53 +105,6 @@ export function createGuided(opts: GuidedOptions): GuidedController {
     opts.startTraining();
   }
 
-  function stepEl(index: number, title: string, body: () => HTMLElement): HTMLElement {
-    const status = stepStatus(index, current);
-    const step = document.createElement('div');
-    step.className = 'gd-step' + (status === 'later' ? ' later' : '');
-
-    const head = document.createElement('div');
-    head.className = 'gd-head';
-    const n = document.createElement('span');
-    n.className = 'gd-n';
-    n.textContent = String(index + 1);
-    const b = document.createElement('b');
-    b.textContent = title;
-    head.append(n, b);
-    if (status === 'done') {
-      const em = document.createElement('em');
-      em.className = 'ok';
-      em.textContent = 'done';
-      head.append(em);
-    } else if (status === 'on') {
-      const em = document.createElement('em');
-      em.className = 'am';
-      em.textContent = 'now';
-      head.append(em);
-    }
-    step.className += status === 'on' ? ' on' : status === 'done' ? ' done' : '';
-    step.append(head);
-
-    if (status !== 'later') {
-      const bodyEl = document.createElement('div');
-      bodyEl.className = 'gd-body';
-      bodyEl.append(body());
-      step.append(bodyEl);
-    }
-    return step;
-  }
-
-  function choiceButton(label: string, sub: string, on: boolean, onClick: () => void): HTMLElement {
-    const btn = document.createElement('button');
-    btn.className = 'gd-choice' + (on ? ' on' : '');
-    const b = document.createElement('b');
-    b.textContent = label;
-    const span = document.createElement('span');
-    span.textContent = sub;
-    btn.append(b, span);
-    btn.addEventListener('click', onClick);
-    return btn;
-  }
 
   function dataStepBody(): HTMLElement {
     const state = opts.getState();
@@ -208,15 +162,10 @@ export function createGuided(opts: GuidedOptions): GuidedController {
   function renderPanel(): void {
     panel.replaceChildren();
     const bodies = [dataStepBody, shapeStepBody, watchStepBody, compareStepBody];
-    MLP_FLOW.forEach((step, i) => panel.append(stepEl(i, step.title, bodies[i]!)));
-
-    const skip = document.createElement('button');
-    skip.className = 'ghost wide';
-    skip.style.margin = '4px 12px 0';
-    skip.style.width = 'calc(100% - 24px)';
-    skip.textContent = 'Skip to the full app';
-    skip.addEventListener('click', opts.skipToExplorer);
-    panel.append(skip);
+    MLP_FLOW.forEach((step, i) =>
+      panel.append(stepEl(i, stepStatus(i, current), step.title, bodies[i]!)),
+    );
+    panel.append(skipButton(opts.skipToExplorer));
   }
 
   function renderCompare(): void {

@@ -14,10 +14,12 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 10 of 16 — reading a map.** The Kohonen switch has a real Explorer behind it now: the
-lattice drawn hex or rect with nodes filled by their own weight vector, a quantisation/topographic
-error chart, the U-matrix and component planes, and controls for dataset, lattice size, topology
-and schedule. Trained on the main thread — measured at ~240,000 steps/s, no worker needed.
+**Slice 11 of 16 — the SOM stepper, and the second guided flow.** Both networks now have the two
+teaching screens the project exists for. The stepper pages through five real stages — sample,
+distances, BMU, neighbourhood, update — with the lattice heatmapped beside the same map folded
+through input space, node-to-node edges and all. The guided flow adds a second walkthrough: pick
+data, watch it fold, see the U-matrix's ridges, then label the map from data it was never trained
+on the answer for.
 
 ## Getting started
 
@@ -29,7 +31,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 273 tests, ~3.6 s
+npm test       # 288 tests, ~3.7 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the MLP golden run, plus challenges 1 and 3, all asserted

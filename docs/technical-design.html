@@ -941,6 +941,25 @@ type FromWorker =
         vector in input space, scaled by its own <code>h</code>.</p></div>
     </div>
 
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 11 &middot; built and measured</span>
+      <p><strong>No worker round trip, because slice 10 already found there is nothing on the
+      other side of one.</strong> The MLP stepper requests a trace and waits for <code>onTrace</code>;
+      the SOM stepper calls <code>somStep(trainer, ds, { trace: true })</code> directly and reads
+      the result synchronously. <code>SomStepTrace</code> is built <em>inside</em>
+      <code>somStep</code> rather than by a sibling function, because the per-node loop the update
+      already runs is the same loop that has to visit every node to report a distance and a
+      strength — splitting it would either duplicate the loop or force an awkward second pass. A
+      test proves tracing changes nothing: 200 traced steps and 200 untraced steps from the same
+      seed land on bit-identical weights.</p>
+      <p><strong>Two pictures, not one, and neither alone is the algorithm.</strong> The lattice
+      view is built exactly as this section specifies. Beside it, an <strong>input-space
+      view</strong> — every node's weight vector as a point, connected to its lattice neighbours by
+      a line, the net the map actually is, drawn where the data lives rather than where the nodes
+      sit on screen. Built once, in <code>render/inputspace.ts</code>, rather than as a
+      stepper-only view: the guided flow's own step 2 ("watch a flat sheet fold into it") is the
+      identical drawing at a different moment, and building it twice was never on the table.</p>
+    </div>
+
     <h3>The concept ladder</h3>
     <p>Twelve cards in the left column, each naming the idea it teaches and each configuring the
     app in one click. Nothing is locked; cards past the frontier are dimmed as guidance and stay
@@ -1666,6 +1685,28 @@ npm run som          <i># headless SOM: 6000 steps, prints QE, TE and an ASCII U
     is the thing to watch. The defence is the same one §6 applies to the challenge cards —
     afterwords are written against live values, and a test renders every branch of both flows
     against synthetic outcomes.</p>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 11 &middot; built and measured</span>
+      <p><strong>"One renderer" turned out to mean something narrower than one function, once
+      there were two state shapes to read.</strong> <code>AppState</code> and <code>SomState</code>
+      share nothing; a single controller polymorphic over both would need as many branches as two
+      controllers have lines, which is not the saving the plan imagined. What is genuinely shared —
+      because it is one idea, not two — is the step-card and choice-button vocabulary: pulled out
+      into <code>ui/guidedShared.ts</code> once <code>ui/somGuided.ts</code> needed it a second
+      time, rather than copied. <code>run/guided.ts</code>'s <code>GuidedFlow</code> type and its
+      one array per network stand as planned.</p>
+      <p><strong>Labelling a map is a vote taken after training finishes, never a training
+      signal.</strong> <code>nodeLabels</code> has every row's BMU vote for that row's class; a
+      node's label is whichever class won it most, and a node no row ever won reads <code>-1</code>
+      rather than <code>0</code>, so "unlabelled" and "labelled class zero" cannot be confused. An
+      unlabelled dataset — the colour cube — returns every node as <code>-1</code>, and the flow
+      says so in plain words rather than drawing an empty grid and leaving a reader to wonder why.</p>
+      <p><strong>A second render-order bug, the same shape as slice 6's, found the same way.</strong>
+      "Reveal labels" was clicked and nothing happened: unlike picking a dataset, revealing labels
+      changes no state a rebuild renders as a side effect, so there was nothing for the click
+      handler to piggyback a render on. Fixed by giving the SOM guided controller its own
+      <code>requestRender</code> callback and calling it explicitly.</p>
+    </div>
   </div>
 </section>
 

@@ -11,7 +11,7 @@
  * states for `apps/web` — modules that import nothing from the DOM belong in its test glob.
  */
 
-export type GuidedStepId = 'data' | 'shape' | 'watch' | 'compare';
+export type GuidedStepId = 'data' | 'shape' | 'watch' | 'compare' | 'regions' | 'label';
 
 export interface GuidedStep {
   readonly id: GuidedStepId;
@@ -25,6 +25,21 @@ export const MLP_FLOW: GuidedFlow = [
   { id: 'shape', title: 'Pick a shape it can draw' },
   { id: 'watch', title: 'Watch it learn' },
   { id: 'compare', title: 'See what changed' },
+];
+
+/**
+ * The map's own flow — slice 11, sharing this type and `ui/guided.ts`'s visual vocabulary with
+ * `MLP_FLOW` rather than inventing a second one. Four steps, not the MLP's four-with-a-shape:
+ * there is no SOM equivalent of "pick a hidden layer" worth a step of its own — the lattice's
+ * 12×12 hex default is already the sensible choice — so step 2 starts training the moment data is
+ * picked. Step 3 *is* the U-matrix slice 10 built, which is why this flow waits for slice 11
+ * rather than arriving with slice 6's.
+ */
+export const SOM_FLOW: GuidedFlow = [
+  { id: 'data', title: 'Pick some data' },
+  { id: 'watch', title: 'Watch a flat sheet fold into it' },
+  { id: 'regions', title: 'See what it kept apart' },
+  { id: 'label', title: 'Label it' },
 ];
 
 export type StepStatus = 'done' | 'on' | 'later';
@@ -80,5 +95,53 @@ export function compareAfterword(beforeAccuracy: number, afterAccuracy: number, 
     `It started at <b>${before}%</b> and after <b>${n}</b> steps it reached <b>${after}%</b> — ` +
     `not the dramatic jump most runs show here. Try <em>Anything at all</em> for more capacity, ` +
     `or open the loss chart in Explorer to see whether it is still falling.`
+  );
+}
+
+/**
+ * The afterword for the map's own step 3 — written against the trained map's own U-matrix and
+ * topographic error, the same rule `compareAfterword` follows: a fixed sentence about "ridges"
+ * would be wrong the one time training leaves the map nearly flat.
+ */
+export function regionsAfterword(uMax: number, te: number): string {
+  if (uMax < 0.02) {
+    return (
+      `This map's neighbours are all still close to each other — <b>${uMax.toFixed(3)}</b> is the ` +
+      `largest distance between any two touching nodes. Barely any ridges yet; a longer run gives ` +
+      `the lattice more room to spread into the data's own gaps.`
+    );
+  }
+  return (
+    `The brightest ridges are where neighbouring nodes sit <b>${uMax.toFixed(3)}</b> apart in the ` +
+    `data — gaps nobody labelled, found only because two nodes that touch on the lattice ended up ` +
+    `far apart in the data. Topographic error is <b>${(te * 100).toFixed(1)}%</b>: the fraction of ` +
+    `points whose two best nodes are strangers on the lattice, which is the number that would ` +
+    `climb if the map had torn.`
+  );
+}
+
+/**
+ * The afterword for the map's own step 4 — labelling a map that was never shown a label during
+ * training. Branches on whether the dataset had any to recover: the colour cube does not, and
+ * saying so plainly is the point of §3's "unlabelled is a fact about training, not the file"
+ * rather than a gap to paper over.
+ */
+export function labelAfterword(labels: ArrayLike<number>, classNames: readonly string[]): string {
+  if (classNames.length === 0) {
+    return (
+      `This dataset has no labels to recover — the colour cube never had any. Pick <em>Two moons</em> ` +
+      `or <em>Three blobs</em> above to see the map label itself from data it was never trained on ` +
+      `the answer for.`
+    );
+  }
+  let labelled = 0;
+  for (let i = 0; i < labels.length; i++) if ((labels[i] as number) >= 0) labelled++;
+  const pct = labels.length > 0 ? (100 * labelled) / labels.length : 0;
+  return (
+    `Every node just voted: whichever class most often won it becomes its label, decided entirely ` +
+    `after training finished. <b>${labelled}</b> of <b>${labels.length}</b> nodes ` +
+    `(<b>${pct.toFixed(0)}%</b>) were won by at least one point and got a label at all — the rest ` +
+    `never won a single sample. The map was never told <em>${classNames[0]}</em> from ` +
+    `<em>${classNames[1] ?? classNames[0]}</em>; it only ever chased the shape of the data.`
   );
 }

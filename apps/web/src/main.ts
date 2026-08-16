@@ -59,6 +59,7 @@ import {
   rebuildSom,
   rebuildSomData,
   runSomSteps,
+  runSomStepTraced,
   writeSomUrl,
   SOM_DATASETS,
 } from './run/somState.ts';
@@ -67,6 +68,8 @@ import { drawLattice } from './render/lattice.ts';
 import { drawHeatgrid } from './render/heatgrid.ts';
 import { drawSomChart } from './render/somchart.ts';
 import { componentPlane, uMatrix } from '@neurallab/som';
+import { createSomStepper } from './ui/somStepper.ts';
+import { createSomGuided } from './ui/somGuided.ts';
 
 const state = createState();
 readUrl(state, window.location.search);
@@ -191,6 +194,13 @@ const stepper = createStepper({
   classNames: () => state.data.classNames,
 });
 
+const somStepper = createSomStepper({
+  getSom: () => somState.som,
+  getData: () => somState.data,
+  stepTraced: () => runSomStepTraced(somState),
+  onOpen: () => setSomRunning(false),
+});
+
 /*
  * The guided flow — §6/§13. `pickDataset` and `pickShape` reuse exactly the same rebuild path
  * Explorer's controls use (`regenerateData`/`regenerateNet`), so a choice made here is not a
@@ -209,6 +219,17 @@ const guided = createGuided({
   },
   startTraining: () => setRunning(true),
   skipToExplorer: () => $('stage-explorer').click(),
+});
+
+const somGuided = createSomGuided({
+  getState: () => somState,
+  pickDataset: (key) => {
+    somState.dataset = key;
+    regenerateSomData();
+  },
+  startTraining: () => setSomRunning(true),
+  skipToExplorer: () => $('stage-explorer').click(),
+  requestRender: () => render(),
 });
 
 /**
@@ -813,6 +834,7 @@ function renderSom(): void {
 
   renderSomPlanes();
   renderSomStats();
+  somGuided.render();
 }
 
 /** One small heatmap per input dimension — §3's answer to reading a map above 3 dimensions. */
@@ -877,9 +899,7 @@ function renderSomStats(): void {
   const btn = $<HTMLButtonElement>('btn-train');
   btn.textContent = s.running ? 'Pause' : finished ? 'Done' : 'Train';
   btn.disabled = finished && !s.running;
-  // The stepper is a recording of an MLP `trainStep` — nothing here produces one yet, so the
-  // button that opens it has nothing to show and is disabled rather than silently broken.
-  $<HTMLButtonElement>('btn-stepper').disabled = true;
+  $<HTMLButtonElement>('btn-stepper').disabled = false;
 
   const badge = $('som-badge');
   badge.classList.toggle('training', s.running);
@@ -1444,8 +1464,8 @@ function boot(): void {
   });
 
   $('btn-stepper').addEventListener('click', () => {
-    if (state.net === 'som') return; // disabled — see renderSomStats.
-    stepper.open();
+    if (state.net === 'som') somStepper.open();
+    else stepper.open();
   });
   $('st-close').addEventListener('click', () => stepper.close());
 
@@ -1505,6 +1525,12 @@ function boot(): void {
       if (event.key === 'ArrowRight') $('st-next').click();
       if (event.key === 'ArrowLeft') $('st-prev').click();
       if (event.key === 'Escape') stepper.close();
+      return;
+    }
+    if (somStepper.isOpen()) {
+      if (event.key === 'ArrowRight') $('som-st-next').click();
+      if (event.key === 'ArrowLeft') $('som-st-prev').click();
+      if (event.key === 'Escape') somStepper.close();
       return;
     }
     if (event.key === 'Escape') closeDrawers();

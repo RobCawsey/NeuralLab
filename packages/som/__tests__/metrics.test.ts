@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Rng, type Dataset } from '@neurallab/core';
 import { createSom } from '../src/som.ts';
-import { componentPlane, quantisationError, topographicError, uMatrix } from '../src/metrics.ts';
+import { componentPlane, nodeLabels, quantisationError, topographicError, uMatrix } from '../src/metrics.ts';
 
 function pointDataset(points: readonly number[]): Dataset {
   return {
@@ -13,6 +13,19 @@ function pointDataset(points: readonly number[]): Dataset {
     classes: 0,
     featureNames: ['f0'],
     classNames: [],
+  };
+}
+
+function labelledDataset(points: readonly number[], labels: readonly number[], classes: number): Dataset {
+  return {
+    name: 'test points',
+    x: Float32Array.from(points),
+    y: Int32Array.from(labels),
+    n: points.length,
+    dim: 1,
+    classes,
+    featureNames: ['f0'],
+    classNames: Array.from({ length: classes }, (_, c) => `class ${c}`),
   };
 }
 
@@ -85,5 +98,34 @@ describe('componentPlane', () => {
   it('is all zero for a dimension out of range, rather than throwing', () => {
     const som = createSom(2, 1, 2, 'rect', new Rng(1));
     expect(Array.from(componentPlane(som, 5))).toEqual([0, 0]);
+  });
+});
+
+describe('nodeLabels', () => {
+  it('matches the hand-worked vote: node0 and node1 unanimous, node2 a single voter', () => {
+    // node0=0, node1=1, node2=3. Samples 0.1/0.2 (class 0) both nearest node0; 0.9/1.1 (class 1)
+    // both nearest node1; 3.0 (class 0) nearest node2 — its only voter.
+    const som = createSom(3, 1, 1, 'rect', new Rng(1));
+    som.W.set([0, 1, 3]);
+    const ds = labelledDataset([0.1, 0.2, 0.9, 1.1, 3.0], [0, 0, 1, 1, 0], 2);
+    const labels = nodeLabels(som, ds, Int32Array.from([0, 1, 2, 3, 4]));
+    expect(Array.from(labels)).toEqual([0, 1, 0]);
+  });
+
+  it('reads -1 for a node no row ever won', () => {
+    // A fourth node at 100 is never nearest anything in this dataset.
+    const som = createSom(4, 1, 1, 'rect', new Rng(1));
+    som.W.set([0, 1, 3, 100]);
+    const ds = labelledDataset([0.1, 0.9], [0, 1], 2);
+    const labels = nodeLabels(som, ds, Int32Array.from([0, 1]));
+    expect(labels[3]).toBe(-1);
+  });
+
+  it('reads -1 for every node on an unlabelled dataset, rather than guessing', () => {
+    const som = createSom(3, 1, 1, 'rect', new Rng(1));
+    som.W.set([0, 1, 3]);
+    const ds = pointDataset([0.1, 0.9, 3.0]);
+    const labels = nodeLabels(som, ds, Int32Array.from([0, 1, 2]));
+    expect(Array.from(labels)).toEqual([-1, -1, -1]);
   });
 });

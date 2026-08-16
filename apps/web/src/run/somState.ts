@@ -21,6 +21,7 @@ import {
   topographicError,
   type Decay,
   type Som,
+  type SomStepTrace,
   type SomTrainer,
   type Topology,
 } from '@neurallab/som';
@@ -195,6 +196,18 @@ export function runSomSteps(s: SomState, untilStep: number): void {
 /** The node nearest a raw data-space point — for hovering the scatter-less colour cube probe. */
 export function somBmuAt(s: SomState, point: ArrayLike<number>): number {
   return bmu(s.som, point);
+}
+
+/**
+ * One real step, traced — the stepper's only entry point into training. There is no separate
+ * "preview" path: a trace of a step that had not happened would be a prediction, not a recording,
+ * the same rule the MLP side's stepper follows.
+ */
+export function runSomStepTraced(s: SomState): SomStepTrace {
+  const r = somStep(s.trainer, s.data, { trace: true });
+  s.lastBmu = r.bmuIndex;
+  recordSomPoint(s);
+  return r.trace as SomStepTrace;
 }
 
 export function somSampleRow(s: SomState, row: number): Float32Array {
