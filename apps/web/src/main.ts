@@ -78,6 +78,8 @@ import { createSomStepper } from './ui/somStepper.ts';
 import { createSomGuided } from './ui/somGuided.ts';
 import { createChallenges } from './ui/challenges.ts';
 import type { ChallengeConfig } from './run/challenges.ts';
+import { createHelp } from './ui/help.ts';
+import { dispatchKeymap, key, type KeymapEntry } from './ui/keymap.ts';
 
 const state = createState();
 readUrl(state, window.location.search);
@@ -354,6 +356,15 @@ const challenges = createChallenges({
   getSomState: () => somState,
   applyChallenge: (config) => applyChallenge(config),
 });
+
+/**
+ * Set once `boot` has wired every button `KEYMAP`'s actions click through to — the same deferred-
+ * assignment shape `syncMlpControls`/`syncSomControls` already use, for the same reason: the
+ * entries close over functions and elements that do not exist until `boot` has built them.
+ */
+let KEYMAP: KeymapEntry[] = [];
+
+const help = createHelp({ getKeymap: () => KEYMAP });
 
 /**
  * True when the reader asked to train before the worker had finished rebuilding.
@@ -1747,6 +1758,26 @@ function boot(): void {
   drawer('btn-panel-right', 'panel-right');
   $('scrim').addEventListener('click', closeDrawers);
 
+  $('btn-help').addEventListener('click', () => help.open());
+
+  /*
+   * The one array every global shortcut is defined in — §8/§14. Built here, once every button and
+   * function it closes over exists, and read from both this handler and the help screen, so a key
+   * cannot be documented without existing or exist without being documented.
+   */
+  KEYMAP = [
+    { key: 'Space', does: 'start or pause training', match: (e) => e.code === 'Space', run: () => $('btn-train').click(), preventDefault: true },
+    key('.', 'one step, while paused', () => $('btn-step').click()),
+    key('R', 'new sample from a new seed', () => $('btn-resample').click()),
+    key('W', 'reinitialise the weights, same seed', () => reinitWeights()),
+    key('N', 'switch network — perceptron ↔ kohonen', () => $(state.net === 'som' ? 'net-mlp' : 'net-som').click()),
+    key('2', '2D view', () => $('view-2d').click()),
+    key('3', '3D view', () => $('view-3d').click()),
+    key('S', 'pause and watch one real step happen', () => $('btn-stepper').click()),
+    key('C', 'open the concept ladder', () => $('btn-challenges').click()),
+    key('?', 'open this help screen', () => help.open()),
+  ];
+
   /*
    * Slice 3 had to pause here when the tab went away, because `requestAnimationFrame` does not
    * fire in a background tab and training stopped whether the app agreed or not. A worker is not
@@ -1756,19 +1787,12 @@ function boot(): void {
 
   window.addEventListener('keydown', (event) => {
     if (event.target instanceof HTMLInputElement && event.target.type === 'text') return;
-    // Space has to match on `code` — its `key` is a literal space.
-    if (event.code === 'Space') {
-      event.preventDefault();
-      $('btn-train').click();
-    }
-    if (event.key === '.') $('btn-step').click();
-    if (event.key === 'r' || event.key === 'R') $('btn-resample').click();
-    if (event.key === 'w' || event.key === 'W') reinitWeights();
-    if (event.key === 's' || event.key === 'S') $('btn-stepper').click();
-    if (event.key === 'c' || event.key === 'C') $('btn-challenges').click();
-    if (event.key === '2') $('view-2d').click();
-    if (event.key === '3') $('view-3d').click();
+    dispatchKeymap(KEYMAP, event);
 
+    if (help.isOpen()) {
+      if (event.key === 'Escape') help.close();
+      return;
+    }
     if (challenges.isOpen()) {
       if (event.key === 'Escape') challenges.close();
       return;
@@ -1802,7 +1826,7 @@ function boot(): void {
   // No syncPresets() here — renderNetPanels() below calls it, along with everything else that
   // has to agree with state.hidden before the first paint.
 
-  $('hint').textContent = 'space train · . step · R resample · W reinitialise';
+  $('hint').textContent = 'space train · . step · R resample · W reinitialise · ? help';
 
   centreProbe();
   state.rebuilding = true;

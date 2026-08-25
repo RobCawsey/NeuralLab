@@ -1377,14 +1377,34 @@ type FromWorker =
       <tbody>
         <tr><td><kbd>Space</kbd></td><td>start or pause training</td></tr>
         <tr><td><kbd>.</kbd></td><td>one step, while paused</td></tr>
-        <tr><td><kbd>R</kbd></td><td>reinitialise the weights and start over &mdash; same seed unless changed</td></tr>
+        <tr><td><kbd>R</kbd></td><td>new sample from a new seed <span class="tag t-vi">amended</span></td></tr>
+        <tr><td><kbd>W</kbd></td><td>reinitialise the weights, same seed <span class="tag t-vi">amended</span></td></tr>
         <tr><td><kbd>N</kbd></td><td>switch network: perceptron &harr; kohonen</td></tr>
         <tr><td><kbd>2</kbd> <kbd>3</kbd></td><td>2D or 3D view</td></tr>
         <tr><td><kbd>S</kbd></td><td>open the stepper</td></tr>
+        <tr><td><kbd>C</kbd></td><td>open the concept ladder <span class="tag t-vi">amended</span></td></tr>
         <tr><td><kbd>?</kbd></td><td>open help, from anywhere</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>close whatever is open</td></tr>
       </tbody>
     </table></div>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 14</span>
+      <p><strong>This table had rotted, and was corrected against the app's real behaviour rather
+      than the behaviour being bent to match it.</strong> It listed <kbd>R</kbd> as
+      "reinitialise the weights" — that has been <kbd>W</kbd>'s job since slice 3, with <kbd>R</kbd>
+      drawing a new sample from a new seed instead, and the app's own hint strip (<code>space train
+      &middot; . step &middot; R resample &middot; W reinitialise</code>) has said so the whole
+      time. <kbd>C</kbd> (the concept ladder) did not exist when this table was first written and
+      is added rather than left implicit. <code>ui/keymap.ts</code> is now the one place a
+      shortcut is defined in the running app — the keydown handler dispatches from it and the
+      in-app help screen renders it, so those two can no longer disagree with each other the way
+      this document and the app just did. This table is still hand-maintained prose and can drift
+      again; the in-app help screen is the one that cannot.</p>
+      <p>The roadmap table's "per-panel <code>?</code>" also narrowed to one global screen. Nothing
+      in this section ever specified what a per-panel help button would show beyond the one already
+      generated here, and a second, panel-scoped surface would be a second thing to keep honest for
+      no reader benefit the single screen does not already provide.</p>
+    </div>
 
     <h3>What lives in the URL</h3>
     <p>Everything needed to reproduce a screen, and nothing else:
@@ -1499,7 +1519,7 @@ type FromWorker =
       <tr><td class="num">11</td><td>The SOM stepper<br><span style="font-size:13px;color:var(--ink-3)">and the second guided flow</span></td><td>BMU and neighbourhood side by side with input space; a guided first run for the map</td><td>SOM trace, input-space view, <strong>second flow, same frame</strong></td></tr>
       <tr><td class="num">12</td><td><strong>3D</strong></td><td>a loss surface you can orbit, and a lattice folding through its data</td><td>Three.js chunk, filter-normalised directions</td></tr>
       <tr><td class="num">13</td><td>Challenge track</td><td>twelve cards, four phases, concept dots</td><td>challenge data, progress in <code>localStorage</code></td></tr>
-      <tr><td class="num">14</td><td>Help</td><td>full-screen reference generated from the app's own data</td><td>help content, per-panel <code>?</code></td></tr>
+      <tr><td class="num">14</td><td>Help</td><td>full-screen reference generated from the app's own data</td><td><code>ui/keymap.ts</code>, one help screen</td></tr>
       <tr><td class="num">15</td><td>The server</td><td>save, list, reopen, share &mdash; and it all still works unplugged</td><td>ASP.NET Core, SQLite, <code>api.ts</code></td></tr>
       <tr><td class="num">16</td><td>Model scorecard</td><td>a trained network across five held-out seeds, with a badge it can fail to earn</td><td>digits blob, confusion matrix, task suite</td></tr>
     </tbody>

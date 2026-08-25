@@ -14,11 +14,11 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 13 of 16 — Challenge track.** Twelve cards, four phases, one dot per concept — `C` or the
-toolbar opens the ladder. Nothing is locked: a card past the frontier dims for guidance and stays
-exactly as clickable as the rest. Each card configures the app in one click, completion is
-detected by watching the run itself reach its target rather than a manual "mark done", and every
-afterword branches on the run's own numbers, quoting them rather than guessing at them.
+**Slice 14 of 16 — Help.** A full-screen reference behind `?` or a toolbar button, generated
+entirely from data the app already has: the shortcut list, the twelve challenge titles, and every
+dataset's own description. The keyboard handler and the help screen now read the same
+`ui/keymap.ts` array, so a shortcut cannot be documented without existing or exist without being
+documented.
 
 ## Getting started
 
@@ -30,7 +30,7 @@ npm run dev
 Then open <http://localhost:5173>.
 
 ```bash
-npm test       # 309 tests, ~3.7 s
+npm test       # 315 tests, ~3.6 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the MLP golden run, plus challenges 1 and 3, all asserted

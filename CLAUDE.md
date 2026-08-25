@@ -18,6 +18,41 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 14 — "Help".** A full-screen reference behind `?` or a toolbar button, generated entirely
+from data the app already has rather than retyped beside it: the shortcut list, the twelve
+challenge titles, and every dataset's own blurb. 315 tests.
+
+**The shortcut list cannot go stale because nothing hand-writes it a second time.**
+`ui/keymap.ts` is one array — `KeymapEntry[]`, each a display key, a one-line description, a
+`match` against the real `KeyboardEvent`, and the action to run — built once in `boot()` once
+every button and closure it references exists, then read from two places: the keydown handler
+dispatches from it, and `ui/help.ts` renders it. A chain of a dozen `if (event.key === …)`
+statements, one added per feature since slice 3, is gone; the handler is now `dispatchKeymap`
+plus the small set of genuinely contextual keys — Escape and the stepper's arrow-paging — whose
+meaning depends on which overlay is on screen and which stay exactly where they already lived
+rather than being forced into a shape that does not fit them.
+
+**Two real shortcuts arrived with the refactor, not just the ones already wired.** `N` switches
+network — perceptron ↔ Kohonen — a shortcut the design document had promised since §8 and no
+slice had actually built; `?` opens help itself, obviously, since a reference screen with no way
+to reach it teaches nobody anything.
+
+**The design document's own keyboard table had rotted, and got fixed against the app's real
+behaviour rather than the app being bent to match a stale table.** It listed `R` as
+"reinitialise the weights" — that has been `W`'s job since slice 3, with `R` drawing a new sample
+from a new seed, and the app's own hint strip (`space train · . step · R resample · W
+reinitialise`) has said so the whole time. Amended in the design document rather than silently
+corrected, the same as every other rotted string this project has found and named rather than
+quietly fixed.
+
+**The dataset glossary reads two dictionaries, not one, because the SOM half and the MLP half
+keep separate ones — and only one of them carries descriptions.** `packages/data`'s `GENERATORS`
+has always had a `blurb` per set, used since slice 6's guided flow; `run/somState.ts`'s
+`SOM_DATASETS` never needed one until this slice gave it a reader. Rather than duplicate five
+blurbs that already exist, the help screen looks a SOM dataset's key up in `GENERATORS`' own
+blurbs first and falls back to one hand-written line only for `colourCube`, the one set with no
+MLP-side twin to borrow from.
+
 **Slice 13 — "Challenge track".** Twelve cards, four phases, one dot per concept — the ladder
 every "challenge N" reference in this file has been pointed at since slice 0, finally behind a
 button. `C` or the toolbar opens it: a single scrollable list, phase headers, one card open at a
@@ -687,17 +722,18 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 14 — "Help"
+### Next: slice 15 — "The server"
 
-A full-screen reference generated from the app's own data, not retyped beside it — the same rule
-§13 just applied to challenge summaries and §6 has applied to every piece of generated copy since
-slice 1's probe note was first wrong. The design document's plan is a single `ui/keymap.ts` array
-the keydown handler dispatches from and the help screen renders, so a shortcut cannot be
-documented without existing or exist without being documented — today's handler in `main.ts` is
-still a chain of `if`s keyed on `event.key`, one per feature added since slice 3, and this is the
-slice that has to fold them into that one array rather than add a thirteenth `if`. Opens from `?`
-or a toolbar button, and — per §8's fig 8.7 note — has to outrank the drawers the same way the
-stepper and the challenge track already do.
+One ASP.NET Core project serving the built SPA at one origin, storing runs in SQLite — arriving
+now and not before, because §10 of the design document is explicit that it is the familiar,
+comfortable part and would otherwise serve a client that does not exist yet. Four endpoints: save
+a run (config and final metrics, never weights — a run is deterministic in its seed and step
+count, so reopening one re-trains it rather than fetching 354 floats back), list mine, reopen,
+share via a read-only token. The client wrapper never throws — offline, timeout, 404, 500, an
+HTML error page from a proxy, and unparseable JSON all become one `ApiResult` union, so there is
+no `try`/`catch` anywhere else in the app. §10's own recorded-in-advance risk: determinism is
+engine-scoped (§4), so a run saved in Chrome and reopened in Firefox reproduces to about five
+figures, not exactly, and a mismatch is a note on reopen, not an error.
 
 ## Invariants
 
