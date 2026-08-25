@@ -1,0 +1,19 @@
+name: Notify portfolio site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/web/**
+      - packages/**
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch neurallab-updated to RobCSoftware
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/RobCawsey/RobCSoftware/dispatches \
+            -f event_type=neurallab-updated
