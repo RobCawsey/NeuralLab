@@ -80,6 +80,8 @@ import { createChallenges } from './ui/challenges.ts';
 import type { ChallengeConfig } from './run/challenges.ts';
 import { createHelp } from './ui/help.ts';
 import { dispatchKeymap, key, type KeymapEntry } from './ui/keymap.ts';
+import { createRuns } from './ui/runs.ts';
+import type { RunDetail, SaveRunInput } from './api.ts';
 
 const state = createState();
 readUrl(state, window.location.search);
@@ -365,6 +367,19 @@ const challenges = createChallenges({
 let KEYMAP: KeymapEntry[] = [];
 
 const help = createHelp({ getKeymap: () => KEYMAP });
+
+/**
+ * The server — §10/§15. Every function this controller needs is called through a one-line
+ * wrapper (`gatherSave`, `applyRunDetail`, `flashMessage`) defined further down, the same
+ * forward-reference shape `applyChallenge` already uses for `challenges` above: a `function`
+ * declaration is hoisted, so it only has to exist by the time a click actually happens, not by
+ * the time this object literal is built.
+ */
+const runs = createRuns({
+  gatherSave: () => gatherSave(),
+  applyRun: (detail) => applyRunDetail(detail),
+  flashMessage: (msg) => flashMessage(msg),
+});
 
 /**
  * True when the reader asked to train before the worker had finished rebuilding.
@@ -897,6 +912,7 @@ function render(): void {
   // Runs every tick regardless of network or overlay state — completion usually happens after
   // the card itself has been closed, with the reader watching Explorer instead.
   challenges.render();
+  checkReopenMismatch();
 
   if (state.net === 'som') {
     renderSom();
@@ -1301,6 +1317,140 @@ function applyChallenge(config: ChallengeConfig): void {
 
   history.replaceState(null, '', syncUrl());
   render();
+}
+
+/** The SOM half's own query string — `writeSomUrl` writes *into* one rather than building its own. */
+function somConfigString(): string {
+  const q = new URLSearchParams();
+  q.set('net', 'som');
+  writeSomUrl(somState, q);
+  return q.toString();
+}
+
+/**
+ * What "Save" sends — or null when there is nothing to save yet. `config` is exactly the query
+ * string `writeUrl`/`somConfigString` already produce for the address bar, so the server stores
+ * nothing that could not be recomputed from a URL — §10's own rule, and the reason `finalMetrics`
+ * is opaque JSON the server never has to understand.
+ */
+function gatherSave(): SaveRunInput | null {
+  if (state.net === 'som') {
+    const s = somState;
+    const last = s.history[s.history.length - 1];
+    if (!last) return null;
+    return {
+      title: `${s.data.name} · ${s.cols}×${s.rows} ${s.topology}`,
+      net: 'som',
+      dataset: s.dataset,
+      config: somConfigString(),
+      finalMetrics: { qe: last.qe, te: last.te, step: last.step },
+      finalLoss: last.qe,
+    };
+  }
+  const last = state.points[state.points.length - 1];
+  if (!last) return null;
+  return {
+    title: `${state.data.name} · ${describeShape(state.model)}`,
+    net: 'mlp',
+    dataset: state.dataset,
+    config: writeUrl(state).slice(1),
+    finalMetrics: {
+      trainLoss: last.trainLoss,
+      valLoss: last.valLoss,
+      trainAccuracy: last.trainAccuracy,
+      valAccuracy: last.valAccuracy,
+      step: last.step,
+    },
+    finalLoss: last.trainLoss,
+  };
+}
+
+/**
+ * Reopening a run, shared or one's own — read the same config a URL would carry, land in
+ * Explorer regardless of which stage it was saved from, and run straight to the saved step.
+ * Nothing is fetched but the config: the weights that result are recomputed, not downloaded,
+ * which is only true because training is deterministic in the seed (invariant 1).
+ */
+function applyRunDetail(detail: RunDetail): void {
+  state.net = detail.net;
+  if (detail.net === 'som') {
+    readSomUrl(somState, '?' + detail.config);
+  } else {
+    readUrl(state, '?' + detail.config);
+  }
+  document.body.dataset['net'] = state.net;
+  state.stage = 'explorer';
+  document.body.dataset['stage'] = state.stage;
+  for (const b of Array.from($('nets').querySelectorAll('button'))) {
+    b.classList.toggle('on', b.id === (state.net === 'som' ? 'net-som' : 'net-mlp'));
+  }
+  for (const b of Array.from($('stages').querySelectorAll('button'))) {
+    b.classList.toggle('on', b.id === 'stage-explorer');
+  }
+  if (view3d) ensure3dSceneFor(state.net);
+
+  if (state.net === 'som') {
+    regenerateSomData();
+    syncSomControls();
+    setSomRunning(true);
+  } else {
+    regenerateData();
+    syncMlpControls();
+    setRunning(true);
+  }
+
+  pendingReopen = detail;
+  history.replaceState(null, '', syncUrl());
+  flashMessage('Reopened — training to the saved step…');
+}
+
+/**
+ * §10's own recorded-in-advance risk: determinism is engine-scoped (§4), so a run saved in one
+ * browser and reopened in another reproduces to about five significant figures, not exactly. The
+ * stored final loss is compared against the freshly recomputed one once the reopened run finishes
+ * — polled from the render loop the same way `challenges.render()` already polls for a card's own
+ * completion — and a mismatch beyond floating-point noise is a note, never an error: the app
+ * cannot tell a lossy record apart from an honest engine difference, so the note names no cause.
+ */
+let pendingReopen: RunDetail | null = null;
+
+function checkReopenMismatch(): void {
+  if (pendingReopen === null) return;
+  const detail = pendingReopen;
+  if (detail.net === 'som') {
+    if (somState.trainer.step < somState.targetSteps) return;
+    pendingReopen = null;
+    const last = somState.history[somState.history.length - 1];
+    if (last) noteMismatch(detail, 'qe', last.qe);
+  } else {
+    if (state.step < state.targetSteps) return;
+    pendingReopen = null;
+    const last = state.points[state.points.length - 1];
+    if (last) noteMismatch(detail, 'trainLoss', last.trainLoss);
+  }
+}
+
+function noteMismatch(detail: RunDetail, field: string, recomputed: number): void {
+  const stored = (detail.finalMetrics as Record<string, unknown> | null)?.[field];
+  if (typeof stored !== 'number' || !Number.isFinite(stored)) return;
+  const relDiff = Math.abs(recomputed - stored) / Math.max(Math.abs(stored), 1e-9);
+  if (relDiff > 1e-4) {
+    flashMessage(
+      `Reopened to ${recomputed.toFixed(4)} — saved as ${stored.toFixed(4)}, likely a different browser's engine (§4).`,
+    );
+  }
+}
+
+/** The toolbar hint strip, borrowed for three seconds at a time for Save/Share feedback — one
+ * more overlay would be a second UI for something this small already has a home for. */
+const HINT_TEXT = 'space train · . step · R resample · W reinitialise · ? help';
+let hintResetTimer: ReturnType<typeof setTimeout> | null = null;
+function flashMessage(msg: string): void {
+  $('hint').textContent = msg;
+  if (hintResetTimer !== null) clearTimeout(hintResetTimer);
+  hintResetTimer = setTimeout(() => {
+    $('hint').textContent = HINT_TEXT;
+  }, 3000);
 }
 
 function centreProbe(): void {
@@ -1759,6 +1909,8 @@ function boot(): void {
   $('scrim').addEventListener('click', closeDrawers);
 
   $('btn-help').addEventListener('click', () => help.open());
+  $('btn-save').addEventListener('click', () => void runs.save());
+  $('btn-runs').addEventListener('click', () => runs.open());
 
   /*
    * The one array every global shortcut is defined in — §8/§14. Built here, once every button and
@@ -1791,6 +1943,10 @@ function boot(): void {
 
     if (help.isOpen()) {
       if (event.key === 'Escape') help.close();
+      return;
+    }
+    if (runs.isOpen()) {
+      if (event.key === 'Escape') runs.close();
       return;
     }
     if (challenges.isOpen()) {
@@ -1826,7 +1982,7 @@ function boot(): void {
   // No syncPresets() here — renderNetPanels() below calls it, along with everything else that
   // has to agree with state.hidden before the first paint.
 
-  $('hint').textContent = 'space train · . step · R resample · W reinitialise · ? help';
+  $('hint').textContent = HINT_TEXT;
 
   centreProbe();
   state.rebuilding = true;
@@ -1836,6 +1992,13 @@ function boot(): void {
   renderNetPanels();
   render();
   window.addEventListener('resize', render);
+
+  runs.startHealthPoll();
+  // A shared link carries only a token — no run id, no owner header needed — the one URL
+  // parameter `readUrl`/`readSomUrl` deliberately do not read themselves, since applying it means
+  // reconfiguring the *other* half of state a plain reload does not otherwise touch.
+  const sharedToken = new URLSearchParams(window.location.search).get('shared');
+  if (sharedToken !== null) void runs.openSharedFromUrl(sharedToken);
 }
 
 function syncPresets(): void {

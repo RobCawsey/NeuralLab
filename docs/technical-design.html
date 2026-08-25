@@ -1474,6 +1474,8 @@ type FromWorker =
         <tr><td>GET /api/runs</td><td>list mine</td><td>title, network, dataset, final loss, when</td></tr>
         <tr><td>GET /api/runs/{id}</td><td>reopen</td><td>the config; weights are recomputed</td></tr>
         <tr><td>POST /api/runs/{id}/share</td><td>read-only token</td><td><code>?shared=&lt;token&gt;</code></td></tr>
+        <tr><td>GET /api/runs/shared/{token}</td><td>open a shared link</td><td>token-only — what <code>?shared=&lt;token&gt;</code> on the app's own URL actually resolves through <span class="tag t-vi">added</span></td></tr>
+        <tr><td>GET /api/health</td><td>the toolbar's own dot</td><td><code>{ ok: true }</code>, polled every 15s <span class="tag t-vi">added</span></td></tr>
       </tbody>
     </table></div>
 
@@ -1488,7 +1490,31 @@ type FromWorker =
       reproduce to about five significant figures, not exactly. <strong>So the stored final loss is
       compared on reopen at a stated tolerance and a mismatch is reported as a note, not an
       error</strong> — and the note names no cause, because a lossy record and an engine difference
-      are equally likely and the app cannot tell them apart.</p>
+      are equally likely and the app cannot tell them apart. Built exactly as stated: polled from
+      the render loop the same way the challenge track already polls for a card's own completion,
+      compared at a relative tolerance of 1e-4, silent on a match.</p>
+    </div>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 15</span>
+      <p><strong>This section never said how "list mine" would know whose runs are whose, because
+      nothing in this document specifies accounts.</strong> There is no login anywhere in
+      NeuralLab. The gap is filled the same way every other piece of state that outlives a page
+      reload already is in this project — <code>localStorage</code>, trusted as far as the browser
+      itself: <code>api.ts</code> generates a bare UUID with <code>crypto.randomUUID()</code> the
+      first time it is needed, sends it as <code>X-Owner-Id</code> with no signature, and that is
+      the entire identity model. It grants no real security and was never meant to — it exists
+      only so a saved-runs list means something on a database nobody else's browser can also open.</p>
+      <p><strong>No ORM.</strong> <code>Microsoft.Data.Sqlite</code> directly, one hand-written
+      schema and five parameterised queries — a project whose whole thesis is hand-written
+      gradients over a library that would hide them (invariant 6, §12) was not about to reach for
+      a heavy one here, and one table does not need migrations.</p>
+      <p><strong>Config is the same query string §8 already specifies, not a second schema for the
+      same idea.</strong> "What lives in the URL" already serialises everything needed to
+      reproduce a screen; saving a run stores that string verbatim, and reopening one is
+      <code>readUrl</code>/<code>readSomUrl</code> against it followed by training straight to the
+      saved step. <code>finalMetrics</code> is opaque JSON both sides only ever round-trip — an
+      MLP run's shape and a SOM run's are different, and the server has no reason to know either
+      one's fields.</p>
     </div>
   </div>
 </section>

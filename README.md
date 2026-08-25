@@ -14,11 +14,12 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 14 of 16 — Help.** A full-screen reference behind `?` or a toolbar button, generated
-entirely from data the app already has: the shortcut list, the twelve challenge titles, and every
-dataset's own description. The keyboard handler and the help screen now read the same
-`ui/keymap.ts` array, so a shortcut cannot be documented without existing or exist without being
-documented.
+**Slice 15 of 16 — The server.** Save, list, reopen and share a run — one ASP.NET Core project,
+SQLite behind it, a client wrapper that never throws. Entirely optional: the app works with no
+server at all, measured rather than assumed — kill it mid-session and training continues, no
+dialog, no unhandled rejection, one amber dot in the toolbar until it comes back. Nothing but a
+run's config and its final numbers ever leaves the browser; weights are never uploaded, because
+reopening a run re-trains it from the same seed instead.
 
 ## Getting started
 
@@ -27,14 +28,23 @@ npm install
 npm run dev
 ```
 
-Then open <http://localhost:5173>.
+Then open <http://localhost:5173>. That's the whole app — the server below is optional and adds
+only Save/Runs/Share; everything else works with it never having been started.
 
 ```bash
-npm test       # 315 tests, ~3.6 s
+npm test       # 324 tests, ~3.6 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the MLP golden run, plus challenges 1 and 3, all asserted
 npm run som    # headless: the SOM golden run, printed as real terminal colour
+```
+
+The server is a separate ASP.NET Core project — `npm run dev` and `npm test` above need no .NET,
+and the commands below need no Node:
+
+```bash
+npm run server   # dotnet run --project server/NeuralLab.Server, on :5150
+dotnet test server  # 12 tests — the SQL layer and the HTTP contract in front of it
 ```
 
 ## The design
@@ -56,6 +66,9 @@ Short version:
 - **Twelve challenge cards**, each configuring the app in one click to make something go wrong on
   purpose: XOR without a hidden layer, a learning rate of 500, zero initialisation, six sigmoid
   layers, a neighbourhood that cools in fifty steps.
+- **The server never has to be there.** Weights are never uploaded — a run is deterministic in its
+  seed and step count, so reopening one re-trains it rather than fetching it back. Kill the server
+  mid-session and nothing about training notices.
 
 Built as a sibling to [Evolab](../Evolab) — same chassis, same rules, same slice discipline.
 

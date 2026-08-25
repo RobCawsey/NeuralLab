@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NeuralLab — slice 14</title>
+    <title>NeuralLab — slice 15</title>
     <link rel="icon" href="data:," />
     <style>
       :root {
@@ -399,6 +399,28 @@
         border-radius: 2px; text-align: center; line-height: 18px;
       }
       .help-dataset-row b { font-weight: 400; color: var(--text); }
+
+      /* The server — slice 15. Invisible while connected; the dot is the one thing that appears
+         to say a save/reopen/share cannot reach the server right now. Training itself never reads
+         this. */
+      .conn-dot {
+        width: 7px; height: 7px; border-radius: 50%; background: var(--amber);
+        box-shadow: 0 0 0 3px rgba(212, 163, 42, .18);
+      }
+      .runs-body { flex: 1; overflow-y: auto; padding: 8px 0 40px; }
+      .runs-inner { max-width: 640px; margin: 0 auto; padding: 0 14px; }
+      .runs-empty { color: var(--faint); font-size: 12.5px; padding: 20px 0; }
+      .run-row {
+        display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
+        padding: 10px 0; border-bottom: 1px solid var(--line);
+      }
+      .run-row .run-title { font-size: 13px; color: var(--text); }
+      .run-row .run-meta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); margin-top: 2px; }
+      .run-row .run-actions { display: flex; gap: 6px; }
+      .runs-note {
+        font-size: 12px; line-height: 1.55; color: var(--dim); margin: 0 0 16px;
+        border-left: 2px solid var(--line); padding: 5px 0 5px 10px;
+      }
       .st-note {
         font-size: 12px; line-height: 1.55; color: var(--text); margin: 2px 0 0;
         border-left: 2px solid var(--amber); padding: 5px 0 5px 10px;
@@ -486,6 +508,9 @@
       <button id="btn-stepper" title="Pause and watch one step happen (S)">Show me how this works &rarr;</button>
       <button id="btn-challenges" title="The concept ladder — twelve cards, nothing locked (C)">Challenges <span class="chip" id="challenge-count">0 / 12</span></button>
       <button id="btn-help" title="Shortcuts, the concept ladder, and every dataset — from anywhere (?)">?</button>
+      <button id="btn-save" title="Save this run — config and final numbers only, never weights">Save</button>
+      <button id="btn-runs" title="Your saved runs — reopen or share one">Runs</button>
+      <span class="conn-dot" id="conn-dot" hidden title="The server is unreachable — nothing local is affected, saving and reopening just aren't available right now"></span>
       <button id="btn-panel-left" class="narrow-only">Controls</button>
       <button id="btn-panel-right" class="narrow-only">Instruments</button>
       <span class="spacer"></span>
@@ -903,6 +928,22 @@
         <button id="help-close">close</button>
       </header>
       <div class="help-body" id="help-body"></div>
+    </div>
+
+    <!--
+      Runs — slice 15. Save, list, reopen, share. Nothing here is uploaded that could not be
+      recomputed: a run is deterministic in its seed, architecture (or lattice) and step count, so
+      "config" is the same query string `writeUrl`/`writeSomUrl` already produce, and reopening a
+      run re-reads it and re-trains rather than fetching weights back.
+    -->
+    <div class="stepper" id="runs" hidden>
+      <header>
+        <span class="brand">Neural<em>lab</em></span>
+        <span class="chip" id="runs-chip">your saved runs</span>
+        <span class="spacer"></span>
+        <button id="runs-close">close</button>
+      </header>
+      <div class="runs-body" id="runs-body"></div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

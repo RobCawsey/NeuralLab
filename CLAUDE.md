@@ -18,6 +18,58 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 15 — "The server".** One ASP.NET Core project (`server/NeuralLab.Server`), SQLite behind
+it, four endpoints, and a client wrapper (`apps/web/src/api.ts`) that never throws. Save, list,
+reopen and share now work, and — the slice's own headline claim, checked live rather than
+assumed — killing the server mid-session changes nothing about training: it continues, no dialog
+appears, no unhandled rejection is logged, and one amber dot appears in the toolbar. 324 JS/TS
+tests, 12 C# tests (`dotnet test` from `server/`, no Node needed for either direction).
+
+**No ORM, and no login — both read straight off invariants this project already has.**
+`Microsoft.Data.Sqlite` directly, one hand-written `CREATE TABLE IF NOT EXISTS` and five
+parameterised queries in `Runs.cs`: a personal project that hand-writes its own gradients rather
+than reach for a library (invariant 6) was not going to reach for a heavy one here either, and one
+table does not need migrations. There is no login anywhere in the design document, so "list mine"
+needed an identity invented on the spot: `api.ts` generates a bare UUID with `crypto.randomUUID()`
+the first time it is needed, keeps it in `localStorage` beside the challenge ladder's own progress
+key, and sends it as `X-Owner-Id` with no signature. It grants no real security — it exists only so
+a saved-runs list means something on a database nobody else's browser can also open.
+
+**`config` is the same query string the address bar already carries, not a second schema for the
+same idea.** §8's "what lives in the URL" already serialises everything needed to reproduce a
+screen; `gatherSave` in `main.ts` calls `writeUrl`/a small `somConfigString` helper around
+`writeSomUrl` and stores the result verbatim. Reopening a run is `readUrl`/`readSomUrl` against
+that string followed by training straight to the saved step — the same "recompute, never
+transfer weights" rule §10 states for the 354 floats a 2-8-8-2 network's worth of weights would
+otherwise have to leave the browser as. `finalMetrics` is opaque JSON both sides only ever
+round-trip, for the same reason: an MLP run's shape (train/val loss and accuracy) and a SOM run's
+(QE/TE) are different, and the server has no reason to know either one's fields.
+
+**Sharing is a token-only route, not an id-plus-token one, because that is what `?shared=<token>`
+in §8's own example already promised.** `POST /api/runs/{id}/share` is owner-scoped and mints (or
+returns, idempotently — pressing Share twice does not invalidate a link already handed out) a
+token; `GET /api/runs/shared/{token}` is the public route anyone with the link can hit, no header
+at all. The plain `GET /api/runs/{id}` route still accepts `?shared=<token>` too, checked against
+that id specifically — a valid token for run A cannot be used to read run B by swapping the path
+segment, which is exactly the kind of routing bug worth distrusting on sight and is the one thing
+`ApiTests.cs` checks two ways rather than one.
+
+**The recorded-in-advance risk from §10 is implemented, not just quoted.** Determinism is
+engine-scoped (§4): a run saved in one browser and reopened in another reproduces to about five
+significant figures, not exactly. `checkReopenMismatch` polls the render loop the same way
+`challenges.render()` already polls for a card's own completion, and once a reopened run finishes
+it compares the freshly recomputed loss against the stored one at a relative tolerance of 1e-4 —
+silent on a match, a note naming §4 (never an error, and never a cause) on a mismatch, because the
+app genuinely cannot tell a lossy record apart from an honest engine difference.
+
+**Dev is two processes and one proxy, so `api.ts` never has to know which.** The Vite dev server
+(5173) and `dotnet run` (fixed at 5150 via `launchSettings.json`) are separate until
+`dotnet publish` unifies them behind the server's own `wwwroot` — exactly what `vite.config.ts`'s
+build output already targeted before this slice existed. `vite.config.ts` gained one
+`server.proxy` entry forwarding `/api` to the .NET port, so every call in `api.ts` is a plain
+same-origin `/api/...` path in both dev and production, and a dead proxy target is just the
+`offline` case `api.ts` already had to handle — not a special one.
+
 **Slice 14 — "Help".** A full-screen reference behind `?` or a toolbar button, generated entirely
 from data the app already has rather than retyped beside it: the shortcut list, the twelve
 challenge titles, and every dataset's own blurb. 315 tests.
@@ -722,18 +774,17 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 15 — "The server"
+### Next: slice 16 — "Model scorecard"
 
-One ASP.NET Core project serving the built SPA at one origin, storing runs in SQLite — arriving
-now and not before, because §10 of the design document is explicit that it is the familiar,
-comfortable part and would otherwise serve a client that does not exist yet. Four endpoints: save
-a run (config and final metrics, never weights — a run is deterministic in its seed and step
-count, so reopening one re-trains it rather than fetching 354 floats back), list mine, reopen,
-share via a read-only token. The client wrapper never throws — offline, timeout, 404, 500, an
-HTML error page from a proxy, and unparseable JSON all become one `ApiResult` union, so there is
-no `try`/`catch` anywhere else in the app. §10's own recorded-in-advance risk: determinism is
-engine-scoped (§4), so a run saved in Chrome and reopened in Firefox reproduces to about five
-figures, not exactly, and a mismatch is a note on reopen, not an error.
+The digits dataset (8×8, dim 64, 1 200 rows, shipped as a base64 blob of roughly 78 kB) and the
+network this project has been building toward: 64-128-128-10, the largest either half will reach,
+already the figure `AppState.snapshots`'s own cap was measured against in slice 12. A confusion
+matrix and a SOM of real handwriting are the two screens that make the app look like it is about
+machine learning rather than toy data — §3's own reason for arriving this late is that a real cost
+(a real download, a real bundle-size line) should buy something a synthetic generator cannot,
+which nothing before now has needed. The "scorecard" itself is §11's phrase: a network trained
+across five held-out seeds rather than one, with a badge it can fail to earn — a task suite that
+grades the run rather than a chart that merely describes it.
 
 ## Invariants
 
@@ -797,8 +848,8 @@ packages/core/   pure TS — Rng, Dataset, split, standardiser, bounds
 packages/data/   pure TS — six 2D generators, each declaring the steps it needs
 packages/mlp/    pure TS — activations, layers, forward, backward, SGD, training loop
 packages/som/    slice 9 — hex lattice (axial coords), bmu, neighbourhood, schedules, u-matrix
-apps/web/        Vite app — canvas render, the training worker, later Three.js
-server/          slice 15 — ASP.NET Core + SQLite
+apps/web/        Vite app — canvas render, the training worker, Three.js, the server's client
+server/          ASP.NET Core + SQLite — save/list/reopen/share, optional, slice 15
 docs/            the technical design document
 ```
 
@@ -810,10 +861,13 @@ no build step for packages and there should not be one.
 ```bash
 npm install          # once, from the repo root
 npm run dev          # http://localhost:5173
-npm test             # 190 tests in ~3.7 s — run these before every commit
+npm test             # 324 tests in ~3.6 s — run these before every commit
 npm run check        # typecheck everything
 npm run data         # headless: build the default set, print it, assert it replays
 npm run train        # headless: the golden run, challenge 1 and challenge 3, all asserted
+npm run som          # headless: the SOM golden run, printed as real terminal colour
+npm run server       # optional — dotnet run --project server/NeuralLab.Server, on :5150
+dotnet test server   # optional — 12 tests, the SQL layer and the HTTP contract in front of it
 ```
 
 `npm run data` prints an ASCII scatter, so the shape of a generator can be confirmed without

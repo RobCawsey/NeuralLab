@@ -17,7 +17,15 @@ export default defineConfig(({ mode }) => ({
       '@neurallab/mlp': src('../../packages/mlp/src/index.ts'),
     },
   },
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    // Dev-only stand-in for the "one origin" slice 15 gives production: `api.ts` always calls
+    // plain `/api/...` paths, and this proxy is what makes those resolve during `npm run dev`
+    // while the .NET server runs on its own port (5150) as a separate process. Never touched if
+    // the server is not running — a failed proxy target is exactly the "offline" case `api.ts`
+    // already has to handle, not a special one.
+    proxy: { '/api': 'http://localhost:5150' },
+  },
   // Straight into the server's wwwroot, so `dotnet publish` picks it up and there is one
   // artefact, one origin and one deploy. Slice 15; harmless until then.
   // `embed` mode builds to a plain dist/ instead, for the portfolio site to copy.

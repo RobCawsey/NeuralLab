@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="NeuralLab.Server.Tests/NeuralLab.Server.Tests.csproj" />
+  <Project Path="NeuralLab.Server/NeuralLab.Server.csproj" />
+</Solution>
