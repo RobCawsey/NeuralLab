@@ -260,6 +260,10 @@
       .gd-choice {
         text-align: left; padding: 7px 9px; display: flex; flex-direction: column; gap: 1px;
         width: 100%;
+        /* `white-space: nowrap` is the global `button` rule, meant for toolbar labels — inherited
+           into these two lines of prose, it clips a blurb instead of wrapping it. Longer sets
+           (Digits' own) are what made it visible; shorter ones were only ever lucky. */
+        white-space: normal;
       }
       .gd-choice b { font-weight: 400; font-size: 12.5px; }
       .gd-choice span {
