@@ -18,6 +18,89 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 16 — "Model scorecard".** The last slice on the roadmap, and the one the project has been
+building toward since the snapshot cap was measured against a 64-128-128-10 network back in slice
+12. Real handwritten digits, a general confusion matrix, a SOM that draws its own map as
+handwriting, and a five-seed task suite with a badge it can fail to earn. 339 tests, 12 C# tests
+unaffected.
+
+**The digits dataset is the real UCI set, not a synthetic stand-in — asked, not assumed.** §3 is
+explicit that Digits exists specifically to escape "toy data," which a procedurally generated
+lookalike would have quietly undermined the moment it shipped. Asked the user directly rather than
+guessing; the answer was to source the real thing. `packages/data/src/digits.ts` embeds 1 200 rows
+(120 per class, balanced) of E. Alpaydin and C. Kaynak's 1998 *Optical Recognition of Handwritten
+Digits* — the same bytes scikit-learn ships as `load_digits`, public domain, fetched from the UCI
+repository's own `optdigits.tra`/`.tes` files and packed 65 bytes a row (64 pixels 0–16, then the
+label) into a 78 000-byte base64 blob — matching §3's own "roughly 78 kB (1200 × 64 bytes)" almost
+exactly once the label byte is folded in. `atob`, not `Buffer`: a Web-platform global identical in
+the browser and in Node (stable since Node 18), not a Node-only API a package that has to run
+under both would otherwise need to branch on. The one hand-checked test that matters: the decoded
+blob is searched for a row matching the *literal first line of `optdigits.tra`*, copied by hand
+from the source file rather than derived from the code under test — a bug that corrupted every row
+identically would still be caught here even though every other check in the file would keep
+passing.
+
+**Digits is the one dataset that ignores `noise`, and the existing "every generator" test had to
+learn that rather than be loosened around it.** `shapes.test.ts`'s "spreads further as noise
+rises" check now excludes `digits` by name, with a comment saying why: real pixels have nothing to
+jitter, and asserting a property against a parameter the generator never reads would be asserting
+something that was never true, not relaxing something that was — invariant 7's actual rule, not a
+bent version of it.
+
+**A genuinely surprising, measured result: a flat network — no hidden layer at all — still clears
+93–97% on Digits.** Every other dataset in this project uses "no hidden layer" as a clean failure
+mode (XOR's 75% ceiling is the canonical one). Digits' 64-dimensional pixel space turns out to be
+close enough to linearly separable that logistic regression alone does most of the job — a real
+finding from running the numbers, not a bug, and worth recording plainly rather than pretending
+every dataset teaches the same lesson. Zero initialisation is still a clean, total failure (exactly
+10.0% every time — chance among ten classes, symmetry never breaks regardless of how easy the
+underlying problem is), and a destructive learning rate still degrades hard (70s%), so the dataset
+still teaches *something* about a flat network — just not the thing XOR does.
+
+**The confusion matrix is general, not digits-only, and reuses `render/heatgrid.ts` rather than
+drawing its own grid.** `packages/mlp/src/confusion.ts`'s `confusionMatrix`/`topConfusions` are
+plain functions over `(net, ds, rows, scratch)` — the same shape `evaluateRows` already has, own
+scratch for the same reason every other diagnostics probe has one — hand-checked against a network
+whose zero weights make every prediction the same known class, so the expected matrix could be
+written down before the test ran. Computed over *validation* rows, not training ones, the same gap
+challenge 7/8 exist to teach: a matrix built from training data would look better than the network
+actually is. The diagonal is outlined rather than coloured differently, since "this cell is the
+right answer" is a fact about *position*, not about brightness a wrong-but-common cell could
+otherwise fake.
+
+**The lattice draws digit thumbnails instead of flat colour swatches when `som.dim === 64`, and it
+looks like handwriting almost immediately.** Literal, the same way `weightColour` is literal for
+the colour cube: 64 weights *are* an 8×8 pixel image, clipped to the node's own circle rather than
+projected down to three channels. Verified live rather than assumed: a 12×12 hex map trained on
+Digits organises into a lattice of recognisably-shaped 0s, 1s, 3s, 8s and 9s clustered near their
+own kind, QE falling from 59 (random init) to under 20 within a few hundred steps — the weights
+climb out of their `[0,1)` starting range into the data's real 0–16 scale almost immediately, §9's
+own "nothing here claims to standardise the input" playing out exactly as documented rather than
+needing a workaround.
+
+**The scorecard grades the reader's own configuration, not a fixed canned one.** Five full
+retrains of *whatever architecture, activation, initialisation, learning rate, batch size and
+optimiser Explorer currently has* — only the dataset (forced to Digits, all 1 200 rows), the split,
+and the five (seed, weight-seed) pairs are the scorecard's own. 600 steps each, measured: adam at
+0.005 on a [128,128] network is flat by then across every seed tried. The badge's bar, 0.85 on the
+*worst* of five (never the mean — one bad seed cannot hide behind four good ones), is calibrated
+against five configurations tried by hand: every sane one clears 0.90+, zero-init never leaves
+0.10, a destructive learning rate lands in the 0.70s — the bar sits cleanly between.
+
+**A real reentrancy bug, found only by watching all five seeds report the exact same number.**
+`rebuildEverything` calls `render()` from *inside itself* — once via `setRunning(false)` at its own
+top, before `resetRun` has zeroed `state.step`, and again at its own end — and the scorecard's own
+completion check lives on that same `render()` path. Without a guard, the first of those inner
+calls sees the *previous* seed's finished `state.step` sitting against the *new* seed's
+already-updated `targetSteps` — both true before either has had a chance to settle — and records
+the previous seed's result a second time, then recurses into the same trap for every seed after
+the first. All five seeds reported bit-identical accuracy, identical weight checksums, identical
+validation splits — the tell that made it findable, since five *different* seeds cannot coincide
+to sixteen decimal places by chance. Fixed with a depth counter: only the outermost, settled call
+— reached once nothing above it on the stack is still mid-rebuild — is allowed to decide anything.
+Verified live: five genuinely different accuracies (90.6%–93.6%) after the fix, against one
+number repeated five times before it.
+
 **Slice 15 — "The server".** One ASP.NET Core project (`server/NeuralLab.Server`), SQLite behind
 it, four endpoints, and a client wrapper (`apps/web/src/api.ts`) that never throws. Save, list,
 reopen and share now work, and — the slice's own headline claim, checked live rather than
@@ -774,17 +857,17 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 16 — "Model scorecard"
+### The roadmap is complete
 
-The digits dataset (8×8, dim 64, 1 200 rows, shipped as a base64 blob of roughly 78 kB) and the
-network this project has been building toward: 64-128-128-10, the largest either half will reach,
-already the figure `AppState.snapshots`'s own cap was measured against in slice 12. A confusion
-matrix and a SOM of real handwriting are the two screens that make the app look like it is about
-machine learning rather than toy data — §3's own reason for arriving this late is that a real cost
-(a real download, a real bundle-size line) should buy something a synthetic generator cannot,
-which nothing before now has needed. The "scorecard" itself is §11's phrase: a network trained
-across five held-out seeds rather than one, with a badge it can fail to earn — a task suite that
-grades the run rather than a chart that merely describes it.
+Slice 16 was the last row of §11's table — seventeen slices, 0 through 16, each ending with
+something you could open in a browser and show somebody. Nothing here declares the project
+*finished*: the design document's own §13 keeps its unbuilt semantic-warnings backlog, and a
+fresh read of any section can still turn up a gap worth a slice of its own. But there is no next
+number queued the way every earlier "Current state" entry had one waiting. Whatever comes next —
+a bug found in the field, a lesson the ladder is still missing, the animals/iris rows §3's own
+dataset table names without a slice attached — starts from a deliberate look at what's here, the
+same way slice 6's "which flow gets built first" and slice 9's "hex or rect" did, not from a
+number already chosen in advance.
 
 ## Invariants
 

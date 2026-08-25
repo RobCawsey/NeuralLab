@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NeuralLab — slice 15</title>
+    <title>NeuralLab — slice 16</title>
     <link rel="icon" href="data:," />
     <style>
       :root {
@@ -421,6 +421,27 @@
         font-size: 12px; line-height: 1.55; color: var(--dim); margin: 0 0 16px;
         border-left: 2px solid var(--line); padding: 5px 0 5px 10px;
       }
+
+      /* The model scorecard — slice 16. */
+      .sc-inner { max-width: 560px; margin: 0 auto; padding: 0 14px; }
+      .sc-intro { font-size: 12.5px; line-height: 1.6; color: var(--dim); margin: 4px 0 16px; }
+      .sc-start { width: 100%; margin-bottom: 18px; }
+      .sc-rows { display: flex; flex-direction: column; gap: 1px; margin-bottom: 16px; }
+      .sc-row {
+        display: flex; justify-content: space-between; padding: 7px 10px; font-size: 12.5px;
+        background: var(--panel2); border-radius: 2px; font-family: var(--mono);
+      }
+      .sc-row.pending { color: var(--faint); }
+      .sc-summary {
+        display: flex; gap: 18px; font-size: 12px; color: var(--dim); margin-bottom: 16px;
+        font-family: var(--mono);
+      }
+      .sc-summary b { color: var(--text); font-weight: 400; }
+      .sc-badge {
+        font-size: 13px; padding: 10px 12px; border-radius: 3px; border: 1px solid var(--line);
+      }
+      .sc-badge.earned { border-color: var(--ok); color: var(--ok); }
+      .sc-badge.missed { border-color: var(--bad); color: var(--bad); }
       .st-note {
         font-size: 12px; line-height: 1.55; color: var(--text); margin: 2px 0 0;
         border-left: 2px solid var(--amber); padding: 5px 0 5px 10px;
@@ -510,6 +531,7 @@
       <button id="btn-help" title="Shortcuts, the concept ladder, and every dataset — from anywhere (?)">?</button>
       <button id="btn-save" title="Save this run — config and final numbers only, never weights">Save</button>
       <button id="btn-runs" title="Your saved runs — reopen or share one">Runs</button>
+      <button id="btn-scorecard" title="The model scorecard — this configuration, five seeds, Digits">Scorecard</button>
       <span class="conn-dot" id="conn-dot" hidden title="The server is unreachable — nothing local is affected, saving and reopening just aren't available right now"></span>
       <button id="btn-panel-left" class="narrow-only">Controls</button>
       <button id="btn-panel-right" class="narrow-only">Instruments</button>
@@ -776,6 +798,16 @@
           <div class="ph">Activation distribution<span class="sp"></span><em id="ph-dead">&mdash;</em></div>
           <div class="pb" id="acthist"></div>
 
+          <!--
+            Confusion matrix — slice 16. Rows are the actual class, columns the network's guess;
+            the diagonal is outlined rather than coloured differently, so "right" reads as a
+            position a reader can check regardless of how common that cell is. General, not
+            digits-only — any run with two or more classes gets one.
+          -->
+          <div class="ph">Confusion matrix<span class="sp"></span><em id="ph-confusion">&mdash;</em></div>
+          <div class="pb"><canvas id="confusion" class="diag-hist" style="height:180px"></canvas></div>
+          <div class="note" id="confusion-note"></div>
+
           <div class="ph">Dataset<span class="sp"></span><em id="ph-seed">seed 4417</em></div>
           <div class="legend" id="legend"></div>
           <div class="pb">
@@ -944,6 +976,22 @@
         <button id="runs-close">close</button>
       </header>
       <div class="runs-body" id="runs-body"></div>
+    </div>
+
+    <!--
+      The model scorecard — slice 16. "A trained network across five held-out seeds, with a
+      badge it can fail to earn." Retrains Explorer's current MLP configuration five times on
+      Digits and reports the worst seed, not the average — the same overlay chassis as every
+      other full-screen surface in this app.
+    -->
+    <div class="stepper" id="scorecard" hidden>
+      <header>
+        <span class="brand">Neural<em>lab</em></span>
+        <span class="chip">model scorecard</span>
+        <span class="spacer"></span>
+        <button id="scorecard-close">close</button>
+      </header>
+      <div class="runs-body" id="scorecard-body"></div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

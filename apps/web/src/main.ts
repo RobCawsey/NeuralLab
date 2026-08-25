@@ -18,6 +18,7 @@ import {
   applyWeights,
   argmax,
   computeLossSurface,
+  confusionMatrix,
   describeShape,
   flattenWeights,
   isActivation,
@@ -29,11 +30,13 @@ import {
   projectOntoDirections,
   randomDirection,
   shapeOf,
+  topConfusions,
   unitDirection,
   type TrainConfig,
 } from '@neurallab/mlp';
 import { classColour, drawScatter, resize } from './render/scatter.ts';
 import { drawHistogram } from './render/histogram.ts';
+import { drawConfusion } from './render/confusion.ts';
 import { activationStats, weightStats } from './run/diagnostics.ts';
 import { createScratch } from '@neurallab/mlp';
 import { wx, wy, sx, sy, visibleBox, type Camera } from './render/camera.ts';
@@ -82,6 +85,8 @@ import { createHelp } from './ui/help.ts';
 import { dispatchKeymap, key, type KeymapEntry } from './ui/keymap.ts';
 import { createRuns } from './ui/runs.ts';
 import type { RunDetail, SaveRunInput } from './api.ts';
+import { createScorecard } from './ui/scorecard.ts';
+import { SCORECARD_SEEDS, SCORECARD_STEPS, freshResults, type ScorecardSeedResult } from './run/scorecard.ts';
 
 const state = createState();
 readUrl(state, window.location.search);
@@ -379,6 +384,21 @@ const runs = createRuns({
   gatherSave: () => gatherSave(),
   applyRun: (detail) => applyRunDetail(detail),
   flashMessage: (msg) => flashMessage(msg),
+});
+
+/**
+ * The model scorecard — §16. Five sequential full training runs against the same worker and
+ * render loop `applyChallenge`/`applyRunDetail` already drive; `scorecardResults`/
+ * `scorecardIndex` are the whole state machine, polled from `render()` the same way
+ * `checkReopenMismatch` already is.
+ */
+let scorecardResults: ScorecardSeedResult[] = [];
+let scorecardIndex = -1; // -1 = not running
+
+const scorecard = createScorecard({
+  getResults: () => scorecardResults,
+  isRunning: () => scorecardIndex >= 0 && scorecardIndex < SCORECARD_SEEDS.length,
+  start: () => startScorecard(),
 });
 
 /**
@@ -790,6 +810,36 @@ function renderDiagnostics(): void {
     });
   });
   $('ph-dead').textContent = anyRelu ? `${deadTotal} of ${reluTotal} dead` : 'no relu layers';
+
+  /*
+   * The confusion matrix — slice 16. Over the *validation* rows, the same set the accuracy
+   * readout itself is computed from — a matrix built from training rows would look better than
+   * the network actually is, exactly the gap challenge 7/8 exist to teach. `diagScratch`, not
+   * `state.scratch`, for the same reason every other diagnostics probe already uses its own: this
+   * runs `forward` over rows the reader is not looking at, and must not leave the graph reading
+   * the wrong sample's activations afterward.
+   */
+  const cm = confusionMatrix(state.model, state.z, state.parts.val, diagScratch);
+  $('ph-confusion').textContent =
+    cm.total > 0 ? `${cm.correct} / ${cm.total} right on validation` : 'no validation rows';
+  const confusionCanvas = $<HTMLCanvasElement>('confusion');
+  queueMicrotask(() => {
+    const fit = resize(confusionCanvas);
+    if (fit) drawConfusion(fit.ctx, cm, state.data.classNames, fit.w, fit.h);
+  });
+  const worst = topConfusions(cm, 2);
+  $('confusion-note').textContent =
+    worst.length === 0
+      ? cm.total > 0
+        ? 'Every validation row lands on the diagonal — nothing confused with anything else.'
+        : ''
+      : `Most confused: ${worst
+          .map((p) => {
+            const a = state.data.classNames[p.actual] ?? String(p.actual);
+            const b = state.data.classNames[p.predicted] ?? String(p.predicted);
+            return `${a} → ${b} (${p.count})`;
+          })
+          .join(', ')}.`;
 }
 
 /** Everything that changes as the run advances. */
@@ -913,6 +963,7 @@ function render(): void {
   // the card itself has been closed, with the reader watching Explorer instead.
   challenges.render();
   checkReopenMismatch();
+  checkScorecardProgress();
 
   if (state.net === 'som') {
     renderSom();
@@ -1453,6 +1504,72 @@ function flashMessage(msg: string): void {
   }, 3000);
 }
 
+/**
+ * The scorecard's own recipe: Digits, the full 1200 rows, a standard 70/30 split, `SCORECARD_STEPS`
+ * — everything *except* the architecture and optimiser, which stay exactly what Explorer already
+ * has, because grading the reader's own configuration is the entire point.
+ */
+function startScorecard(): void {
+  scorecardResults = freshResults();
+  scorecardIndex = 0;
+  runScorecardSeed();
+}
+
+function runScorecardSeed(): void {
+  const seed = SCORECARD_SEEDS[scorecardIndex] as number;
+  state.dataset = 'digits';
+  state.n = 1200;
+  state.trainFraction = 0.7;
+  state.seed = seed;
+  state.weightSeed = seed;
+  state.targetSteps = SCORECARD_STEPS;
+  state.net = 'mlp';
+  document.body.dataset['net'] = 'mlp';
+  state.stage = 'explorer';
+  document.body.dataset['stage'] = 'explorer';
+  for (const b of Array.from($('nets').querySelectorAll('button'))) b.classList.toggle('on', b.id === 'net-mlp');
+  for (const b of Array.from($('stages').querySelectorAll('button'))) b.classList.toggle('on', b.id === 'stage-explorer');
+  if (view3d) ensure3dSceneFor(state.net);
+
+  regenerateData();
+  syncMlpControls();
+  setRunning(true);
+  scorecard.render();
+}
+
+/** Polled from `render()`, the same shape as `checkReopenMismatch` — a run finishing is
+ * something only the render loop notices as it happens, not an event this code is handed. */
+/**
+ * Reentrancy guard, and the reason it has to exist: `rebuildEverything` calls `render()` from
+ * *inside* itself — once via `setRunning(false)` at its own top, before `resetRun` has zeroed
+ * `state.step`, and again at its own end — and this function is on that same `render()` path.
+ * Without the guard, the first of those inner calls sees the *previous* seed's finished
+ * `state.step` sitting against the *new* seed's already-updated `targetSteps` (both true before
+ * either one has had a chance to settle) and records the previous seed's result a second time —
+ * found live, watching every seed after the first report back the first seed's own exact
+ * accuracy. Only the outermost, settled call — reached once nothing above it on the stack is
+ * still mid-rebuild — is allowed to decide anything.
+ */
+let scorecardDepth = 0;
+function checkScorecardProgress(): void {
+  scorecardDepth++;
+  try {
+    if (scorecardDepth > 1) return;
+    if (scorecardIndex < 0 || scorecardIndex >= scorecardResults.length) return;
+    if (state.step < state.targetSteps) return;
+    const last = state.points[state.points.length - 1];
+    scorecardResults[scorecardIndex] = {
+      seed: scorecardResults[scorecardIndex]!.seed,
+      valAccuracy: last ? last.valAccuracy : 0,
+    };
+    scorecardIndex++;
+    scorecard.render();
+    if (scorecardIndex < SCORECARD_SEEDS.length) runScorecardSeed();
+  } finally {
+    scorecardDepth--;
+  }
+}
+
 function centreProbe(): void {
   const box = bounds2d(state.data);
   state.probe = [(box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2];
@@ -1911,6 +2028,7 @@ function boot(): void {
   $('btn-help').addEventListener('click', () => help.open());
   $('btn-save').addEventListener('click', () => void runs.save());
   $('btn-runs').addEventListener('click', () => runs.open());
+  $('btn-scorecard').addEventListener('click', () => scorecard.open());
 
   /*
    * The one array every global shortcut is defined in — §8/§14. Built here, once every button and
@@ -1947,6 +2065,10 @@ function boot(): void {
     }
     if (runs.isOpen()) {
       if (event.key === 'Escape') runs.close();
+      return;
+    }
+    if (scorecard.isOpen()) {
+      if (event.key === 'Escape') scorecard.close();
       return;
     }
     if (challenges.isOpen()) {

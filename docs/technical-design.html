@@ -637,6 +637,35 @@ interface Schedule {
     screens — a confusion matrix and a SOM of handwriting — that make the app look like it is
     about machine learning rather than about toy data. It arrives in slice 16 so the decision can
     be reversed cheaply.</p>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 16</span>
+      <p><strong>The blob is the real UCI set, confirmed rather than assumed.</strong> This
+      section's own reasoning — that Digits exists specifically to escape "toy data" — would have
+      been undermined by a procedurally generated lookalike, so the sourcing question was put to
+      the user directly rather than decided silently. E. Alpaydin and C. Kaynak's 1998 <em>Optical
+      Recognition of Handwritten Digits</em>, the same bytes scikit-learn ships as
+      <code>load_digits</code>, public domain: 1 200 rows, 120 per class, taken from the UCI
+      repository's own <code>optdigits.tra</code>/<code>.tes</code> files and packed 65 bytes a
+      row (64 pixels, then the label) — 78 000 raw bytes, matching this section's own figure
+      almost exactly once the label byte is folded in.</p>
+      <p><strong>A genuinely surprising, measured result: a flat network — no hidden layer at
+      all — still clears 93&ndash;97% on Digits.</strong> Every other dataset in this project uses
+      "no hidden layer" as a clean failure mode; XOR's 75% ceiling is the canonical one. Digits'
+      64-dimensional pixel space turns out to be close enough to linearly separable that logistic
+      regression alone does most of the job. Zero initialisation still fails completely (exactly
+      10.0%, chance among ten classes — symmetry never breaks regardless of how easy the
+      underlying problem is) and a destructive learning rate still degrades hard, so the dataset
+      still teaches something about a flat network; it is just a different lesson than the one
+      every 2D set teaches, recorded here rather than smoothed over.</p>
+      <p><strong>The scorecard's 0.85 badge threshold is measured against five configurations
+      tried by hand, not chosen to feel right.</strong> At <code>SCORECARD_STEPS</code> (600,
+      itself measured — adam at 0.005 on a [128,128] network is flat by then across every seed
+      tried): every sane configuration clears 0.90 or better on its worst seed, zero-init never
+      leaves 0.10, and a destructive learning rate lands in the 0.70s. 0.85 sits cleanly between —
+      earnable by a reasonable choice, not by accident — and the badge reads the <em>worst</em> of
+      the five seeds, never the mean, so one unlucky initialisation cannot hide behind four good
+      ones.</p>
+    </div>
   </div>
 </section>
 
@@ -1817,6 +1846,32 @@ npm run som          <i># headless SOM: 6000 steps, prints QE, TE and an ASCII U
       changes no state a rebuild renders as a side effect, so there was nothing for the click
       handler to piggyback a render on. Fixed by giving the SOM guided controller its own
       <code>requestRender</code> callback and calling it explicitly.</p>
+    </div>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 16 &middot; a reentrancy bug found only by running it</span>
+      <p><strong>The scorecard's five seeds all reported the exact same accuracy, to sixteen
+      decimal places, on the first run.</strong> Not a plausible coincidence — five different
+      (split, initialisation) pairs cannot land on the same float by chance — and the tell that
+      made it findable at all: a weight checksum logged alongside each result was bit-identical
+      across all five too, meaning only one network had actually been trained.</p>
+      <p><strong>The cause: <code>rebuildEverything</code> calls <code>render()</code> from
+      <em>inside itself</em></strong> — once via <code>setRunning(false)</code> at its own top,
+      before <code>resetRun</code> has zeroed <code>state.step</code>, and again at its own end —
+      and the scorecard's own completion check lives on that same <code>render()</code> path
+      every other polled check (<code>challenges.render()</code>, the reopen-mismatch note) already
+      shares. Starting seed 2 sets the new <code>targetSteps</code> before calling
+      <code>rebuildEverything</code>, whose own first line then renders against seed 1's still
+      just-finished <code>state.step</code> — both true before either value has had a chance to
+      settle — and records seed 1's result a second time, then recurses into the identical trap
+      for seeds 3, 4 and 5 before any of them trains a single step.</p>
+      <p><strong>Fixed with a depth counter, not a special case for this one caller.</strong> Only
+      the outermost call to the scorecard's progress check — reached once nothing above it on the
+      call stack is still mid-rebuild — is allowed to decide anything; every reentrant call beneath
+      it returns immediately. Verified live: five genuinely different accuracies (90.6%&ndash;93.6%
+      on one configuration tried) after the fix, against one number repeated five times before it.
+      The general lesson, restated from slice 6 and slice 11's own render-order bugs: anything
+      polled from <code>render()</code> has to assume it can be called from partway through a
+      rebuild, not only from a settled frame.</p>
     </div>
   </div>
 </section>

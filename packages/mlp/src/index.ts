@@ -82,3 +82,9 @@ export {
   unitDirection,
   type LossSurface,
 } from './losssurface.ts';
+export {
+  confusionAt,
+  confusionMatrix,
+  topConfusions,
+  type ConfusionMatrix,
+} from './confusion.ts';

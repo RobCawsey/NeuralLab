@@ -11,7 +11,7 @@
  */
 
 import { Rng, sample, type Dataset } from '@neurallab/core';
-import { blobs, circles, colourCube, moons, spirals, xor } from '@neurallab/data';
+import { blobs, circles, colourCube, digits, moons, spirals, xor } from '@neurallab/data';
 import {
   bmu,
   createSom,
@@ -40,6 +40,10 @@ export const SOM_DATASETS = {
   blobs: { label: 'Three blobs', build: (n: number, seed: number) => blobs({ n, seed }) },
   spirals: { label: 'Two spirals', build: (n: number, seed: number) => spirals({ n, seed }) },
   xor: { label: 'XOR', build: (n: number, seed: number) => xor({ n, seed }) },
+  // Real handwriting, not a generator — slice 16. The lattice draws each node's own weight
+  // vector as an 8×8 thumbnail rather than a flat colour swatch whenever dim is 64, the same way
+  // the colour cube's three weights are drawn as a colour when dim is 3.
+  digits: { label: 'Digits', build: (n: number, seed: number) => digits({ n, seed }) },
 } satisfies Record<string, { label: string; build: (n: number, seed: number) => Dataset }>;
 
 export type SomDatasetKey = keyof typeof SOM_DATASETS;

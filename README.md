@@ -14,12 +14,11 @@ belongs to, because a reader has to be able to follow it.
 
 ## Status
 
-**Slice 15 of 16 — The server.** Save, list, reopen and share a run — one ASP.NET Core project,
-SQLite behind it, a client wrapper that never throws. Entirely optional: the app works with no
-server at all, measured rather than assumed — kill it mid-session and training continues, no
-dialog, no unhandled rejection, one amber dot in the toolbar until it comes back. Nothing but a
-run's config and its final numbers ever leaves the browser; weights are never uploaded, because
-reopening a run re-trains it from the same seed instead.
+**Slice 16 of 16 — Model scorecard.** The last slice on the roadmap. Real handwritten digits (the
+UCI/scikit-learn set, not a synthetic stand-in), a confusion matrix, a Kohonen map that draws its
+own lattice as recognisable handwriting, and a scorecard that retrains the reader's own
+configuration five times and hands out a badge it can fail to earn — graded on the worst of five
+seeds, not the average, so one unlucky initialisation cannot hide behind four good ones.
 
 ## Getting started
 
@@ -32,7 +31,7 @@ Then open <http://localhost:5173>. That's the whole app — the server below is 
 only Save/Runs/Share; everything else works with it never having been started.
 
 ```bash
-npm test       # 324 tests, ~3.6 s
+npm test       # 339 tests, ~3.6 s
 npm run check  # typecheck
 npm run data   # headless: print the default dataset as ASCII, assert it replays
 npm run train  # headless: the MLP golden run, plus challenges 1 and 3, all asserted
@@ -69,6 +68,9 @@ Short version:
 - **The server never has to be there.** Weights are never uploaded — a run is deterministic in its
   seed and step count, so reopening one re-trains it rather than fetching it back. Kill the server
   mid-session and nothing about training notices.
+- **Digits is real, not generated.** Every other dataset is procedural; this one is the actual UCI
+  handwritten-digits set, specifically because the confusion matrix and the map of handwriting it
+  buys are not lessons a synthetic stand-in could honestly teach.
 
 Built as a sibling to [Evolab](../Evolab) — same chassis, same rules, same slice discipline.
 

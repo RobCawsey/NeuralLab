@@ -74,7 +74,12 @@ describe('every generator', () => {
   });
 
   it('spreads further as noise rises', () => {
+    // Digits is excluded on purpose, not loosened around: it is real pixel data with nothing to
+    // jitter, `noise` is accepted and ignored (see digits.ts's own comment on why), and asserting
+    // "more noise spreads it further" against a parameter the generator never reads would be
+    // asserting something that was never true rather than relaxing something that was.
     for (const [key, gen] of Object.entries(GENERATORS)) {
+      if (key === 'digits') continue;
       const tight = spread(gen.build({ n: 240, noise: 0, seed: 8 }));
       const loose = spread(gen.build({ n: 240, noise: 0.5, seed: 8 }));
       expect(loose, key).toBeGreaterThan(tight);
