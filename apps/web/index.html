@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NeuralLab — slice 9</title>
+    <title>NeuralLab — slice 13</title>
     <link rel="icon" href="data:," />
     <style>
       :root {
@@ -341,6 +341,40 @@
         color: var(--faint); padding: 6px 10px 4px;
       }
       .som-st-view canvas { flex: 1; min-height: 0; width: 100%; display: block; }
+
+      /* The challenge track — slice 13. One dot per concept, phases as headers, one card open
+         at a time; "ahead" is dimmed guidance, never locked. */
+      .ch-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+      .ch-dots { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex: none; }
+      .ch-dot { width: 11px; height: 11px; border-radius: 50%; display: block; border: 1px solid var(--line); background: transparent; }
+      .ch-dot.done { border-color: var(--ok); background: var(--ok); }
+      .ch-list { overflow-y: auto; flex: 1; min-height: 0; }
+      .ch-list-inner { max-width: 640px; margin: 0 auto; }
+      .ch-phase {
+        font-family: var(--mono); font-size: 9.5px; letter-spacing: .13em; text-transform: uppercase;
+        color: var(--faint); padding: 12px 14px 5px;
+      }
+      .ch-card { border-bottom: 1px solid var(--line); }
+      .ch-card.ahead { opacity: .45; }
+      .ch-h {
+        display: grid; grid-template-columns: 22px 1fr 16px; align-items: center; gap: 9px;
+        padding: 9px 14px; cursor: pointer; font-size: 13px; color: var(--text); background: none; border: 0; width: 100%; text-align: left;
+      }
+      .ch-h:hover { background: var(--panel2); }
+      .ch-n {
+        font-family: var(--mono); font-size: 10px; color: var(--faint); border: 1px solid var(--line);
+        border-radius: 2px; text-align: center; line-height: 18px;
+      }
+      .ch-card.done .ch-n { color: var(--ok); border-color: var(--ok); }
+      .ch-check { color: var(--ok); font-size: 11px; justify-self: end; }
+      .ch-open-body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+      .ch-setup { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+      .ch-done-when { font-size: 11.5px; color: var(--faint); line-height: 1.45; }
+      .ch-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+      .ch-note {
+        font-size: 12px; line-height: 1.55; color: var(--text); border-left: 2px solid var(--amber);
+        padding: 5px 0 5px 10px;
+      }
       .st-note {
         font-size: 12px; line-height: 1.55; color: var(--text); margin: 2px 0 0;
         border-left: 2px solid var(--amber); padding: 5px 0 5px 10px;
@@ -426,6 +460,7 @@
       <button id="btn-reset" title="Back to step zero, same weights">Reset</button>
       <button id="btn-resample" title="New sample from a new seed (R)">Resample</button>
       <button id="btn-stepper" title="Pause and watch one step happen (S)">Show me how this works &rarr;</button>
+      <button id="btn-challenges" title="The concept ladder — twelve cards, nothing locked (C)">Challenges <span class="chip" id="challenge-count">0 / 12</span></button>
       <button id="btn-panel-left" class="narrow-only">Controls</button>
       <button id="btn-panel-right" class="narrow-only">Instruments</button>
       <span class="spacer"></span>
@@ -806,6 +841,26 @@
           <div class="pb" id="som-st-kv"></div>
         </div>
         <div class="st-explain" id="som-st-explain"></div>
+      </div>
+    </div>
+
+    <!--
+      The challenge track — slice 13, the concept ladder every "challenge N" reference in this
+      project has been pointing at since slice 0. A full-screen overlay like the stepper above,
+      not a third stage: slice 8 already learned that a stage earns its place by needing to differ
+      from Explorer, and picking a card's job is entirely "reconfigure the app, then get out of
+      the way" — there is nothing here that needs its own screen once that is done.
+    -->
+    <div class="stepper" id="challenges" hidden>
+      <header>
+        <span class="brand">Neural<em>lab</em></span>
+        <span class="chip" id="ch-chip">nothing is locked</span>
+        <span class="spacer"></span>
+        <button id="ch-close">close</button>
+      </header>
+      <div class="ch-body">
+        <div class="ch-dots" id="ch-dots"></div>
+        <div class="ch-list" id="ch-list"></div>
       </div>
     </div>
 

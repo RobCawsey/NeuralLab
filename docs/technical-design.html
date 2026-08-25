@@ -973,11 +973,11 @@ type FromWorker =
         <tr><td class="num">3</td><td>Too big a step</td><td>lr 500, moons</td><td>the accuracy collapses <span class="tag t-vi">amended</span></td></tr>
         <tr><td class="num">4</td><td>Too small a step</td><td>lr 1e&minus;6, 2000 steps</td><td>step size, and float32 ULP</td></tr>
         <tr><td class="num">5</td><td>All the same to begin with</td><td>zero init, 8 hidden units</td><td>symmetry breaking</td></tr>
-        <tr><td class="num">6</td><td>The signal fades</td><td>6 sigmoid layers &rarr; swap to relu</td><td>vanishing gradients</td></tr>
-        <tr><td class="num">7</td><td>Learning the noise</td><td>8 samples, 64 units, no val</td><td>overfitting</td></tr>
-        <tr><td class="num">8</td><td>Knowing when to stop</td><td>same run + validation split</td><td>generalisation</td></tr>
+        <tr><td class="num">6</td><td>The signal fades</td><td>6 sigmoid layers</td><td>vanishing gradients <span class="tag t-vi">amended</span></td></tr>
+        <tr><td class="num">7</td><td>Learning the noise</td><td>20 samples, 64 units, 90/10 split</td><td>overfitting <span class="tag t-vi">amended</span></td></tr>
+        <tr><td class="num">8</td><td>Knowing when to stop</td><td>same run + a real 70/30 split</td><td>generalisation <span class="tag t-vi">amended</span></td></tr>
         <tr><td class="num">9</td><td>A grid that finds its own shape</td><td>SOM 12&times;12 on a ring</td><td>competitive learning</td></tr>
-        <tr><td class="num">10</td><td>Cooling too fast</td><td>&sigma; decays in 50 steps</td><td>the schedule; QE down, TE up</td></tr>
+        <tr><td class="num">10</td><td>Cooling too fast</td><td>&sigma; decays in 50 steps, run continues to 3000</td><td>the schedule; QE down, TE up <span class="tag t-vi">amended</span></td></tr>
         <tr><td class="num">11</td><td>The map has edges</td><td>U-matrix on 3 blobs, unlabelled</td><td>structure without labels</td></tr>
         <tr><td class="num">12</td><td>Two ways to see one dataset</td><td>SOM and MLP side by side</td><td>unsupervised vs supervised</td></tr>
       </tbody>
@@ -1007,6 +1007,33 @@ type FromWorker =
       what makes that legible instead of blank: at those weights the logits reach 1e5, and an
       unshifted <code>exp</code> would fill every panel with NaN. Diverging is the lesson; NaN
       everywhere would be a bug.</p>
+    </div>
+
+    <div class="risk" style="margin-top:16px"><span class="lbl">Amendment &middot; slice 13 &middot; cards 6, 7, 8, 10</span>
+      <p><strong>Two cards' literal numbers were not reachable through the app's own controls, and
+      were adjusted against the controls rather than the other way round.</strong> Card 7 as written
+      here says "8 samples&hellip; no val"; the sample slider bottoms out at 20 and the train/val
+      slider tops out at 90%, both deliberately (a 2&ndash;3&nbsp;sample class after an 8-row split
+      is a different failure than the one the card is teaching). Built as <code>n:&nbsp;20,
+      trainFraction:&nbsp;0.9</code> instead &mdash; 2 validation rows, not zero, which is close
+      enough to "barely any held back" to make the same point card 7 is named for, and reachable by
+      dragging either slider to see the boundary for yourself rather than only by pressing the
+      card's own button.</p>
+      <p><strong>Card 6 is a single one-click config, not the two-step "train, then swap" this
+      table implies.</strong> A <code>ChallengeConfig</code> configures the app once; it does not
+      script a second action after the first has finished, and giving it that shape for one card
+      would be a special case for every afterword function to know about. The card sets six sigmoid
+      layers and its afterword reads the gradient-flow bars that produces &mdash; swapping the
+      activation dropdown to ReLU afterward and pressing Reset is one click the reader already has
+      in Explorer's own architecture panel, not a second stage the card needs to drive for them.</p>
+      <p><strong>Card 10 needed a field the run configuration did not have.</strong> Every schedule
+      control before this slice kept the decay horizon equal to the run length &mdash; the steps
+      slider wrote both. Showing "the schedule finishes at step 50, the run keeps going to 3&nbsp;000"
+      needed the two pulled apart, so <code>SomState</code> gained <code>scheduleSteps</code>
+      alongside <code>targetSteps</code>: ordinary use keeps them equal, and only this card's config
+      sets them differently. The resulting run is the honest version of the lesson &mdash;
+      quantisation error keeps falling while topographic error climbs, because the lattice is still
+      fitting individual points long after it stopped moving as one connected sheet.</p>
     </div>
 
     <h3>Explanations that cannot rot</h3>

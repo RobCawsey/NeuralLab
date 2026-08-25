@@ -76,6 +76,8 @@ import { drawSomChart } from './render/somchart.ts';
 import { componentPlane, uMatrix } from '@neurallab/som';
 import { createSomStepper } from './ui/somStepper.ts';
 import { createSomGuided } from './ui/somGuided.ts';
+import { createChallenges } from './ui/challenges.ts';
+import type { ChallengeConfig } from './run/challenges.ts';
 
 const state = createState();
 readUrl(state, window.location.search);
@@ -340,6 +342,19 @@ const somGuided = createSomGuided({
   requestRender: () => render(),
 });
 
+/*
+ * The challenge track — §9/§13. `applyChallenge` is the one place a card's recipe becomes real
+ * state: every field a config names is written directly (the same "guided sets state, does not
+ * drive the control" shape `pickDataset`/`pickShape` above already use), then whichever side was
+ * touched is rebuilt through the same `regenerateData`/`regenerateSomData` every other control on
+ * that side already goes through.
+ */
+const challenges = createChallenges({
+  getState: () => state,
+  getSomState: () => somState,
+  applyChallenge: (config) => applyChallenge(config),
+});
+
 /**
  * True when the reader asked to train before the worker had finished rebuilding.
  *
@@ -388,6 +403,15 @@ function fillSelect(id: string, values: readonly string[], current: string): HTM
 
 /** Set once `boot` has wired the steps slider, so a dataset change can move it. */
 let syncSteps: () => void = () => {};
+
+/**
+ * Set once `boot` has wired every MLP/SOM control — `applyChallenge` is the one caller that
+ * writes many state fields directly rather than through a control's own listener, the same shape
+ * of gap the guided flow hit twice (§6, §11): a display element left disagreeing with the state
+ * it is supposed to be showing. Called after every challenge, so none of them go stale.
+ */
+let syncMlpControls: () => void = () => {};
+let syncSomControls: () => void = () => {};
 
 /** 1, 2, 5 × 10ⁿ — a target of 6 314 steps is a number nobody chose. */
 function snapSteps(raw: number): number {
@@ -859,6 +883,10 @@ function refreshField(camera: Camera, width: number, height: number): void {
 }
 
 function render(): void {
+  // Runs every tick regardless of network or overlay state — completion usually happens after
+  // the card itself has been closed, with the reader watching Explorer instead.
+  challenges.render();
+
   if (state.net === 'som') {
     renderSom();
     return;
@@ -1209,6 +1237,61 @@ function regenerateNet(): void {
   rebuildEverything({ data: false });
 }
 
+/**
+ * Reconfigure the app to one challenge card's recipe.
+ *
+ * Every field the config names is written straight onto `state`/`somState`, the same shape
+ * `pickDataset`/`pickShape` already use for the guided flow — a card is not a parallel way of
+ * changing the run, it is the same state everything else writes. `regenerateData`/
+ * `regenerateSomData` are always the ones called, never the narrower `regenerateNet`/
+ * `regenerateSom`: every challenge that touches a side names that side's dataset too, so the
+ * wider rebuild is always correct and there is no second branch to get wrong.
+ *
+ * Challenge 12 is the one card that writes both sides at once — an MLP config and a SOM config
+ * in the same object — which is exactly why `touchesMlp`/`touchesSom` are independent rather than
+ * read off `config.net`.
+ */
+function applyChallenge(config: ChallengeConfig): void {
+  let touchesMlp = false;
+  if (config.dataset !== undefined) { state.dataset = config.dataset; touchesMlp = true; }
+  if (config.n !== undefined) { state.n = config.n; touchesMlp = true; }
+  if (config.trainFraction !== undefined) { state.trainFraction = config.trainFraction; touchesMlp = true; }
+  if (config.hidden !== undefined) { state.hidden = [...config.hidden]; touchesMlp = true; }
+  if (config.hiddenAct !== undefined) { state.hiddenAct = config.hiddenAct; touchesMlp = true; }
+  if (config.init !== undefined) { state.init = config.init; touchesMlp = true; }
+  if (config.learningRate !== undefined) { state.learningRate = config.learningRate; touchesMlp = true; }
+  if (config.targetSteps !== undefined) { state.targetSteps = config.targetSteps; touchesMlp = true; }
+
+  let touchesSom = false;
+  if (config.somDataset !== undefined) { somState.dataset = config.somDataset; touchesSom = true; }
+  if (config.cols !== undefined) { somState.cols = config.cols; touchesSom = true; }
+  if (config.rows !== undefined) { somState.rows = config.rows; touchesSom = true; }
+  if (config.topology !== undefined) { somState.topology = config.topology; touchesSom = true; }
+  if (config.decay !== undefined) { somState.decay = config.decay; touchesSom = true; }
+  if (config.somTargetSteps !== undefined) { somState.targetSteps = config.somTargetSteps; touchesSom = true; }
+  if (touchesSom) somState.scheduleSteps = config.scheduleSteps ?? somState.targetSteps;
+
+  state.net = config.net;
+  document.body.dataset['net'] = state.net;
+  state.stage = 'explorer';
+  document.body.dataset['stage'] = state.stage;
+  for (const b of Array.from($('nets').querySelectorAll('button'))) {
+    b.classList.toggle('on', b.id === (state.net === 'som' ? 'net-som' : 'net-mlp'));
+  }
+  for (const b of Array.from($('stages').querySelectorAll('button'))) {
+    b.classList.toggle('on', b.id === 'stage-explorer');
+  }
+  if (view3d) ensure3dSceneFor(state.net);
+
+  if (touchesMlp) regenerateData();
+  if (touchesSom) regenerateSomData();
+  syncMlpControls();
+  syncSomControls();
+
+  history.replaceState(null, '', syncUrl());
+  render();
+}
+
 function centreProbe(): void {
   const box = bounds2d(state.data);
   state.probe = [(box.minX + box.maxX) / 2, (box.minY + box.maxY) / 2];
@@ -1437,6 +1520,7 @@ function boot(): void {
   const lr = $<HTMLInputElement>('i-lr');
   lr.value = String(Math.log10(state.learningRate));
   const showLr = (): void => {
+    lr.value = String(Math.log10(state.learningRate));
     $('v-lr').textContent =
       state.learningRate >= 1 ? state.learningRate.toFixed(1) : state.learningRate.toFixed(4);
     $('lr-note').innerHTML =
@@ -1497,6 +1581,17 @@ function boot(): void {
   showSteps();
   syncSteps = showSteps;
 
+  syncMlpControls = (): void => {
+    $<HTMLInputElement>('i-n').value = String(state.n);
+    $('v-n').textContent = String(state.n);
+    $<HTMLInputElement>('i-split').value = String(state.trainFraction);
+    $('v-split').textContent = `${Math.round(state.trainFraction * 100)}%`;
+    act.value = state.hiddenAct;
+    init.value = state.init;
+    showLr();
+    showSteps();
+  };
+
   /* ---------------- SOM controls ---------------- */
 
   const somDatasetSelect = $<HTMLSelectElement>('som-i-dataset');
@@ -1556,10 +1651,27 @@ function boot(): void {
   };
   somSteps.addEventListener('input', () => {
     somState.targetSteps = snapSteps(Math.pow(10, Number(somSteps.value)));
+    // Ordinary use keeps the schedule's own horizon equal to the run length — only a challenge
+    // deliberately pulls them apart, and dragging this slider is not that.
+    somState.scheduleSteps = somState.targetSteps;
     showSomSteps();
     regenerateSom();
   });
   showSomSteps();
+
+  syncSomControls = (): void => {
+    $<HTMLInputElement>('som-i-cols').value = String(somState.cols);
+    $('som-v-cols').textContent = String(somState.cols);
+    $<HTMLInputElement>('som-i-rows').value = String(somState.rows);
+    $('som-v-rows').textContent = String(somState.rows);
+    for (const b of Array.from($('som-topology').querySelectorAll('button'))) {
+      b.classList.toggle('on', b.id === (somState.topology === 'rect' ? 'som-topo-rect' : 'som-topo-hex'));
+    }
+    for (const b of Array.from($('som-decay').querySelectorAll('button'))) {
+      b.classList.toggle('on', b.id === `som-decay-${somState.decay}`);
+    }
+    showSomSteps();
+  };
 
   $('btn-train').addEventListener('click', () => {
     if (state.net === 'som') setSomRunning(!somState.running);
@@ -1600,6 +1712,8 @@ function boot(): void {
     else stepper.open();
   });
   $('st-close').addEventListener('click', () => stepper.close());
+
+  $('btn-challenges').addEventListener('click', () => challenges.open());
 
   const reinitWeights = (): void => {
     if (state.net === 'som') {
@@ -1651,9 +1765,14 @@ function boot(): void {
     if (event.key === 'r' || event.key === 'R') $('btn-resample').click();
     if (event.key === 'w' || event.key === 'W') reinitWeights();
     if (event.key === 's' || event.key === 'S') $('btn-stepper').click();
+    if (event.key === 'c' || event.key === 'C') $('btn-challenges').click();
     if (event.key === '2') $('view-2d').click();
     if (event.key === '3') $('view-3d').click();
 
+    if (challenges.isOpen()) {
+      if (event.key === 'Escape') challenges.close();
+      return;
+    }
     if (stepper.isOpen()) {
       // Scoped to the overlay being open, so arrow keys do not hijack the sliders behind it.
       if (event.key === 'ArrowRight') $('st-next').click();

@@ -18,6 +18,58 @@ When this file and the design document disagree, the design document wins.
 
 ## Current state
 
+**Slice 13 — "Challenge track".** Twelve cards, four phases, one dot per concept — the ladder
+every "challenge N" reference in this file has been pointed at since slice 0, finally behind a
+button. `C` or the toolbar opens it: a single scrollable list, phase headers, one card open at a
+time, a dot row that reads "what do I understand now" without scrolling. Nothing is locked —
+cards past the frontier are dimmed for guidance and stay exactly as clickable as the rest. 309
+tests.
+
+**A card is data, not a script — one `ChallengeConfig` object, applied in one click, never a
+sequence.** `run/challenges.ts` holds all twelve as plain objects: a config (which fields of
+`AppState`/`SomState` to set), a setup line, a "done when" prompt, and an `afterword` function
+that reads a `ChallengeOutcome` — one superset-optional-fields interface every card's afterword
+reads selectively, so `ui/challenges.ts` gathers one outcome object per render and calls whichever
+card is open with it uniformly, never needing to know which fields a given card actually uses.
+Completion is never a manual "mark done" — it is detected by polling `state.step`/`som.trainer.step`
+against the target every render tick, the same "watch the real state, don't ask the reader to
+confirm it" rule the stepper's own trace already follows.
+
+**Applying a challenge writes state directly, the same shape `pickDataset`/`pickShape` already
+use for the guided flow — a card is not a second way to change the run, it is the same state
+everything else writes.** `applyChallenge` in `main.ts` sets every field a config names, then
+calls `regenerateData`/`regenerateSomData` — always the wider rebuild, never the narrower
+`regenerateNet`/`regenerateSom`, because every challenge that touches a side names that side's
+dataset too, so there is no second branch to get the choice of wrong.
+
+**Card 12 is the one card that writes both sides of the app in the same click, and it is why
+completion has two independent halves rather than one.** `ChallengeConfig` carries an MLP recipe
+and a SOM recipe in the same object; `ui/challenges.ts` tracks `ch12Mlp`/`ch12Som` separately and
+marks the card done only once both have finished, whichever order the reader trains them in. The
+afterword itself has four branches — neither finished, MLP only, SOM only, both — checked by a
+test that asserts all four render as genuinely distinct strings.
+
+**A found-before-it-shipped version of the same stale-control bug slice 6 and slice 11 both hit
+live.** `applyChallenge` sets `state.hiddenAct`, `state.init`, `state.learningRate`,
+`state.targetSteps`, `somState.cols`, `somState.topology` and others directly, exactly the way
+`pickDataset` sets `state.dataset` directly — and exactly none of those controls were among the
+two (`i-dataset`, `i-arch`) slice 6 had already taught to resync themselves on every render.
+Designed around this time rather than discovered by a screenshot: `syncMlpControls`/
+`syncSomControls`, assigned once `boot()` has wired every slider and segment, called after every
+challenge so the panel a reader opens next always agrees with the run actually configured.
+
+**Two of the twelve cards' literal numbers were not reachable through the app's own controls, and
+a third needed a field the run configuration did not yet have — all three amended in the design
+document against what the sliders can actually do, not against what sounded right on paper.**
+Card 7's "8 samples, no val" becomes 20 samples (`i-n`'s own floor) at a 90/10 split (`i-split`'s
+own ceiling); card 6's "swap to relu" mid-card is one click the reader already has in Explorer's
+own activation dropdown rather than a second stage a `ChallengeConfig` would need to script; card
+10's "schedule finishes at 50, run continues to 3 000" needed `SomState.scheduleSteps` decoupled
+from `targetSteps` — every ordinary control keeps the two equal, and only this card's config pulls
+them apart, the resulting run showing quantisation error still falling while topographic error
+climbs, because the lattice keeps fitting individual points long after it stopped moving as one
+sheet.
+
 **Slice 12 — "3D".** A `2D / 3D` toggle in the toolbar, or the `2`/`3` keys. The MLP gets an
 orbitable loss surface — two random, filter-normalised directions through weight space by
 default, with a `literal` mode that varies two named weights instead, and the run's own path
@@ -635,16 +687,17 @@ retrofitting a second client onto a hardcoded first one is how the copy ends up 
 duplicated copy was the exact risk that made this an open question. One `GuidedFlow` type, two
 arrays of steps, one renderer, and a test that renders every branch of both.
 
-### Next: slice 13 — "Challenge track"
+### Next: slice 14 — "Help"
 
-Twelve cards, four phases, one dot per concept — the ladder every "challenge N" reference in this
-file has been pointing at since slice 0. A collapsed card is its title alone; twelve briefs would
-not fit on screen but twelve titles do. Cards past the frontier are dimmed as guidance rather than
-locked, because a reader who already knows the material should not have to replay the ladder to
-reach it, and a completed card is never dimmed. Progress lives in `localStorage`, parsed
-defensively like every other piece of state that outlives the code reading it. The afterword
-branches on the run's own outcome and quotes its numbers — the same rule §6 has applied to every
-piece of generated copy in the project since slice 1's probe note was first wrong.
+A full-screen reference generated from the app's own data, not retyped beside it — the same rule
+§13 just applied to challenge summaries and §6 has applied to every piece of generated copy since
+slice 1's probe note was first wrong. The design document's plan is a single `ui/keymap.ts` array
+the keydown handler dispatches from and the help screen renders, so a shortcut cannot be
+documented without existing or exist without being documented — today's handler in `main.ts` is
+still a chain of `if`s keyed on `event.key`, one per feature added since slice 3, and this is the
+slice that has to fold them into that one array rather than add a thirteenth `if`. Opens from `?`
+or a toolbar button, and — per §8's fig 8.7 note — has to outrank the drawers the same way the
+stepper and the challenge track already do.
 
 ## Invariants
 

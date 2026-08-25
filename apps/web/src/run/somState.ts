@@ -61,6 +61,8 @@ export interface SomConfig {
   readonly sigma0: number;
   readonly decay: Decay;
   readonly targetSteps: number;
+  /** The schedule's own horizon — usually equal to `targetSteps`. See `SomState`'s own note. */
+  readonly scheduleSteps: number;
 }
 
 export interface SomState {
@@ -76,6 +78,14 @@ export interface SomState {
   sigma0: number;
   decay: Decay;
   targetSteps: number;
+  /**
+   * The horizon α(t)/σ(t) decay against — independent of `targetSteps`, the length of the run
+   * itself. Every ordinary control keeps the two equal (the steps slider writes both), so this
+   * is invisible until something deliberately pulls them apart: challenge 10 sets a schedule that
+   * finishes decaying in 50 steps while the run keeps going for thousands more, which is the only
+   * way to show a lattice cooling too fast rather than a lattice trained briefly and correctly.
+   */
+  scheduleSteps: number;
 
   data: Dataset;
   /** SOM trains unsupervised on every row — there is no split to hold any of it back. */
@@ -103,6 +113,7 @@ const DEFAULTS: SomConfig = {
   sigma0: 6,
   decay: 'exponential',
   targetSteps: 3000,
+  scheduleSteps: 3000,
 };
 
 /** How often QE/TE are measured — the same reasoning as `evalEvery` on the MLP side: a fixed
@@ -125,6 +136,7 @@ export function somConfig(s: SomState): SomConfig {
     sigma0: s.sigma0,
     decay: s.decay,
     targetSteps: s.targetSteps,
+    scheduleSteps: s.scheduleSteps,
   };
 }
 
@@ -161,7 +173,7 @@ export function rebuildSom(s: SomState): void {
   s.trainer = createSomTrainer(
     s.som,
     s.rows_,
-    { alpha0: s.alpha0, sigma0: s.sigma0, decay: s.decay, steps: s.targetSteps },
+    { alpha0: s.alpha0, sigma0: s.sigma0, decay: s.decay, steps: s.scheduleSteps },
     new Rng(s.drawSeed),
   );
   resetSomRun(s);
@@ -236,6 +248,7 @@ export function readSomUrl(s: SomState, search: string): void {
   s.alpha0 = clampFloat(q.get('alpha0'), 0.01, 1, s.alpha0);
   s.sigma0 = clampFloat(q.get('sigma0'), 0.5, 30, s.sigma0);
   s.targetSteps = clampInt(q.get('ssteps'), 100, 20000, s.targetSteps);
+  s.scheduleSteps = clampInt(q.get('sched'), 10, 20000, s.targetSteps);
 }
 
 export function writeSomUrl(s: SomState, q: URLSearchParams): void {
@@ -250,6 +263,7 @@ export function writeSomUrl(s: SomState, q: URLSearchParams): void {
   q.set('sigma0', String(s.sigma0));
   q.set('decay', s.decay);
   q.set('ssteps', String(s.targetSteps));
+  q.set('sched', String(s.scheduleSteps));
 }
 
 function clampInt(raw: string | null, lo: number, hi: number, fallback: number): number {
